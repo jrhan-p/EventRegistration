@@ -1,0 +1,5 @@
+<!doctype html><html><head><base target="_top"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{font-family:Arial,sans-serif;background:#f4f6f8;margin:0;color:#222}.card{max-width:480px;margin:20px auto;background:#fff;padding:24px;text-align:center;border-radius:16px;box-shadow:0 2px 14px #0002}img{width:min(320px,90%)}h1{font-size:25px}.meal{font-size:21px;font-weight:bold}.id{color:#667085}</style></head>
+<body><div class="card"><h1><?= eventName ?></h1><p><b><?= record.fullName ?></b></p><p><?= eventDate ?><br><?= location ?></p>
+<img src="<?= qrUrl ?>" alt="Registration QR code"><p class="meal">Food: <?= record.mealSelected ?></p><p class="id"><?= record.registrationId ?></p>
+<p>Present this QR code at event check-in and meal pickup.</p></div></body></html>

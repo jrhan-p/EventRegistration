@@ -1,0 +1,16 @@
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+const source = fs.readFileSync(require('path').join(__dirname, '..', 'Core.gs'), 'utf8');
+const context = {}; vm.createContext(context); vm.runInContext(source + '\nthis.api={normalizePhone_,extractToken_,evaluateScan_,APP};', context);
+const { normalizePhone_, extractToken_, evaluateScan_, APP } = context.api;
+assert.equal(normalizePhone_('(919) 555-1212'), '+19195551212');
+assert.equal(extractToken_('CER1:abc-123'), 'abc-123');
+assert.equal(extractToken_('https://example.test/?view=receipt&token=xyz'), 'xyz');
+const base = { status:'ACTIVE', mealSelected:'Chicken', mealOrdered:true, checkedInAt:'', mealRedeemedAt:'' };
+assert.equal(evaluateScan_(base, APP.modes.CHECKIN).code, 'CHECK_IN');
+assert.equal(evaluateScan_({...base, checkedInAt:'earlier'}, APP.modes.CHECKIN).code, 'ALREADY_CHECKED_IN');
+assert.equal(evaluateScan_({...base, mealOrdered:false}, APP.modes.MEAL).code, 'NOT_ORDERED');
+assert.equal(evaluateScan_({...base, mealRedeemedAt:'earlier'}, APP.modes.MEAL).code, 'ALREADY_REDEEMED');
+assert.equal(evaluateScan_({...base, mealSelected:'No meal'}, APP.modes.MEAL).code, 'NO_MEAL');
+console.log('Core tests passed.');

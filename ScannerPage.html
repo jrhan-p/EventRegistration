@@ -1,0 +1,26 @@
+<!doctype html>
+<html><head><base target="_top"><meta name="viewport" content="width=device-width,initial-scale=1">
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+body{font-family:Arial,sans-serif;background:#f5f7fa;margin:0;color:#1f2937}.wrap{max-width:520px;margin:auto;padding:18px}
+.card{background:white;border-radius:14px;padding:18px;box-shadow:0 2px 12px #0002;margin-bottom:14px}h1{font-size:24px;margin:0 0 4px}
+input,button{box-sizing:border-box;width:100%;font-size:18px;padding:13px;border-radius:9px;margin-top:10px}input{border:1px solid #aaa}
+button{border:0;background:#1967d2;color:white;font-weight:bold}.result{font-size:20px}.ok{border-left:8px solid #16833b}.bad{border-left:8px solid #c5221f}
+.meal{font-size:30px;font-weight:bold;color:#8a3b00}.muted{color:#667085;font-size:14px}#reader{margin-top:14px}
+</style></head><body><div class="wrap">
+<div class="card"><h1><?= mode === 'meal' ? 'Meal pickup' : 'Event check-in' ?></h1><div><?= eventName ?></div>
+<input id="pin" inputmode="numeric" type="password" placeholder="Operator PIN" autocomplete="off">
+<div id="reader"></div><input id="manual" placeholder="QR value or registration token"><button onclick="submitManual()">Process code</button></div>
+<div id="output"></div></div>
+<script>
+const MODE=<?!= JSON.stringify(mode) ?>;let busy=false;
+function start(){if(!window.Html5QrcodeScanner){show({ok:false,message:'Camera scanner could not load. Use manual entry.'});return}
+ const scanner=new Html5QrcodeScanner('reader',{fps:8,qrbox:{width:240,height:240}},false);scanner.render(onScan,()=>{});}
+function onScan(value){if(busy)return;process(value)}
+function submitManual(){process(document.getElementById('manual').value)}
+function process(value){const pin=document.getElementById('pin').value;if(!pin){show({ok:false,message:'Enter the operator PIN first.'});return}
+ busy=true;google.script.run.withSuccessHandler(r=>{busy=false;show(r)}).withFailureHandler(e=>{busy=false;show({ok:false,message:e.message})}).processScan(value,pin,MODE)}
+function show(r){const cls=r.ok?'ok':'bad';const meal=r.mealSelected?'<div class="meal">'+esc(r.mealSelected)+'</div>':'';
+ document.getElementById('output').innerHTML='<div class="card result '+cls+'"><b>'+esc(r.message||'Unknown result')+'</b>'+(r.fullName?'<div>'+esc(r.fullName)+'</div>':'')+meal+(r.dietaryNotes?'<div>Dietary note: '+esc(r.dietaryNotes)+'</div>':'')+(r.priorAt?'<div class="muted">Previous time: '+esc(String(r.priorAt))+'</div>':'')+'</div>'}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}start();
+</script></body></html>
