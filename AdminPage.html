@@ -46,6 +46,16 @@ button:disabled{background:#b6b0a2;cursor:wait}
 <button onclick="createEvent()">Create event</button>
 <div class="muted">Creates the event's spreadsheet, registration form, and scanner links in one step. Customize the form afterward via its edit link.</div></div>
 <div id="list"></div>
+<div class="card" id="sms" style="display:none"><h2>SMS (Twilio)</h2>
+<div class="muted" id="smsStatus"></div>
+<input id="twSid" placeholder="Account SID (starts with AC)" autocomplete="off">
+<input id="twToken" type="password" placeholder="Auth token" autocomplete="off">
+<input id="twFrom" placeholder="Twilio phone number (+1...)" autocomplete="off">
+<button onclick="saveTwilio()">Save credentials</button>
+<div style="margin-top:14px">
+<input id="twTest" placeholder="Send a test SMS to (+1...)" autocomplete="off">
+<button onclick="testSms()">Send test SMS</button></div>
+<div class="muted">Credentials are stored in the script's private properties &mdash; never in a spreadsheet or the code repository.</div></div>
 <div class="card" id="tools" style="display:none"><h2>Maintenance</h2>
 <button class="red" onclick="cleanup()">Remove legacy single-event data</button>
 <div class="muted">Deletes the old test tabs, test users, and retired form from the original deployment. Safe to run more than once.</div></div>
@@ -70,7 +80,11 @@ function createEvent(){const n=document.getElementById('name').value;if(!n.trim(
 function act(id,a){if(a!=='reopen'&&!confirm(a+' this event?'))return;call('eventAction',{event:id,action:a})}
 function cleanup(){if(confirm('Remove the legacy test data? This cannot be undone.'))call('cleanupLegacy')}
 function esc(s){return String(s||'').replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
-function render(r){document.getElementById('create').style.display='block';document.getElementById('tools').style.display='block';
+function updateSms(r){const el=document.getElementById('smsStatus');
+ el.textContent=r.smsConfigured?('Configured — texts are sent from '+r.smsFrom+'.'):'Not configured — registration texts are skipped until credentials are saved.'}
+function render(r){document.getElementById('create').style.display='block';document.getElementById('tools').style.display='block';document.getElementById('sms').style.display='block';
+ if(r.smsConfigured!==undefined)updateSms(r);
+ if(!r.events){if(r.sent)note('Test SMS sent to '+r.sent+'.',true);document.getElementById('twToken').value='';return}
  const list=document.getElementById('list');
  const scannerCard=r.scannerUrl?'<div class="card"><h2>Scanner link — one for everyone</h2>'+
   '<div class="muted">Give every operator this same link. Their station PIN decides what it becomes: check-in desk, a specific session, or meal pickup. Closing an event disables its PINs.</div>'+
@@ -93,4 +107,8 @@ function render(r){document.getElementById('create').style.display='block';docum
    '<table style="border-collapse:collapse;font-size:14px">'+stations+'</table>'+
    '<div style="margin-top:10px">'+buttons+'</div></div>'}).join('')}
 function addStation(id){const n=prompt('Station / session name (e.g. Friday Evening Session):');if(!n||!n.trim())return;call('addStation',{event:id,name:n.trim()})}
+function v(id){return document.getElementById(id).value.trim()}
+function saveTwilio(){if(!v('twSid')||!v('twToken')||!v('twFrom')){note('Fill in the SID, auth token, and phone number.',false);return}
+ call('setTwilio',{sid:v('twSid'),token:v('twToken'),from:v('twFrom')})}
+function testSms(){if(!v('twTest')){note('Enter a number to text.',false);return}call('testSms',{to:v('twTest')})}
 </script></body></html>

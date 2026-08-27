@@ -40,7 +40,33 @@ function adminListEvents(pin) {
       });
     }
   }
-  return { masterUrl: db_().getUrl(), scannerUrl: SCANNER_BASE, events: events };
+  const props = PropertiesService.getScriptProperties();
+  return {
+    masterUrl: db_().getUrl(), scannerUrl: SCANNER_BASE, events: events,
+    smsConfigured: Boolean(props.getProperty('TWILIO_ACCOUNT_SID') && props.getProperty('TWILIO_AUTH_TOKEN') && props.getProperty('TWILIO_FROM_NUMBER')),
+    smsFrom: props.getProperty('TWILIO_FROM_NUMBER') || ''
+  };
+}
+
+function adminSetTwilio(pin, accountSid, authToken, fromNumber) {
+  requireAdmin_(pin);
+  const sid = cleanText_(accountSid);
+  const token = cleanText_(authToken);
+  const from = normalizePhone_(fromNumber);
+  if (!/^AC[a-zA-Z0-9]{32}$/.test(sid)) throw new Error('That does not look like a Twilio Account SID (starts with AC, 34 characters).');
+  if (!token) throw new Error('Enter the auth token.');
+  if (!from) throw new Error('Enter the Twilio phone number, e.g. +18005551234.');
+  setTwilioCredentials(sid, token, from);
+  return { ok: true, smsConfigured: true, smsFrom: from };
+}
+
+function adminTestSms(pin, to) {
+  requireAdmin_(pin);
+  const phone = normalizePhone_(to);
+  if (!phone) throw new Error('Enter a valid mobile number.');
+  const result = sendSms_(phone, 'RCCC Events: test message — SMS is configured correctly.');
+  if (result.skipped) throw new Error('Twilio is not configured yet — save the credentials first.');
+  return { ok: true, sent: phone };
 }
 
 function adminCreateEvent(pin, name, date, location) {
