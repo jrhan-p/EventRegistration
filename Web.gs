@@ -49,7 +49,10 @@ function doPost(e) {
         : { ok: false, message: 'Unknown event.' });
     }
     if (fn === 'addStation') return out(Object.assign({ ok: true }, adminAddStation(p.pin, p.event, p.name)));
-    if (fn === 'setTwilio') return out(adminSetTwilio(p.pin, p.sid, p.token, p.from));
+    // Parameter names avoid "sid"/"token": Google's /exec front end hijacks
+    // requests carrying both of those (its own reserved names) and returns an
+    // error page before the script ever runs.
+    if (fn === 'setTwilio') return out(adminSetTwilio(p.pin, p.twSid, p.twToken, p.twFrom));
     if (fn === 'testSms') return out(adminTestSms(p.pin, p.to));
     if (fn === 'listEvents') return out(Object.assign({ ok: true }, adminListEvents(p.pin)));
     if (fn === 'createEvent') return out(Object.assign({ ok: true }, adminCreateEvent(p.pin, p.name, p.date, p.location)));

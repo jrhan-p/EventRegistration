@@ -109,6 +109,6 @@ function render(r){document.getElementById('create').style.display='block';docum
 function addStation(id){const n=prompt('Station / session name (e.g. Friday Evening Session):');if(!n||!n.trim())return;call('addStation',{event:id,name:n.trim()})}
 function v(id){return document.getElementById(id).value.trim()}
 function saveTwilio(){if(!v('twSid')||!v('twToken')||!v('twFrom')){note('Fill in the SID, auth token, and phone number.',false);return}
- call('setTwilio',{sid:v('twSid'),token:v('twToken'),from:v('twFrom')})}
+ call('setTwilio',{twSid:v('twSid'),twToken:v('twToken'),twFrom:v('twFrom')})}
 function testSms(){if(!v('twTest')){note('Enter a number to text.',false);return}call('testSms',{to:v('twTest')})}
 </script></body></html>
