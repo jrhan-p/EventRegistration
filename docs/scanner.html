@@ -1,107 +1,164 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>Event scanner</title>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
 <style>
 :root{--green:#1d4a38;--green2:#123325;--gold:#c9a227;--goldsoft:#e6c96b;--cream:#faf6ec;--ink:#26221a;--muted:#8a8272;--ok:#1a7f4e;--bad:#b3261e}
 *{box-sizing:border-box}
-body{font-family:-apple-system,'Segoe UI',Arial,sans-serif;background:var(--cream);margin:0;color:var(--ink)}
-.band{background:linear-gradient(150deg,var(--green),var(--green2));color:#fff;padding:20px 18px 48px}
-.brand{display:flex;align-items:center;gap:8px}
-.brand .spark{color:var(--goldsoft);font-size:15px}
-.brand span.t{font-size:11px;letter-spacing:.24em;text-transform:uppercase;opacity:.9}
-.band h1{font-family:'Fraunces',Georgia,serif;font-size:27px;margin:12px 0 3px;font-weight:700}
-.band .ev{opacity:.85;font-size:15px;min-height:20px}
-.chip{display:inline-block;margin-top:12px;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;padding:6px 14px;border-radius:99px;background:var(--gold);color:#2e2400}
+html,body{height:100%}
+body{font-family:-apple-system,'Segoe UI',Arial,sans-serif;background:var(--cream);margin:0;color:var(--ink);height:100dvh;overflow:hidden;display:flex;flex-direction:column}
+header{background:linear-gradient(150deg,var(--green),var(--green2));color:#fff;padding:12px 16px 13px;flex:none}
+.brand{display:flex;align-items:center;gap:7px}
+.brand .spark{color:var(--goldsoft);font-size:12px}
+.brand span.t{font-size:10px;letter-spacing:.22em;text-transform:uppercase;opacity:.9}
+.hrow{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:7px}
+h1{font-family:'Fraunces',Georgia,serif;font-size:21px;margin:0;font-weight:700}
+.chip{flex:none;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;padding:4px 11px;border-radius:99px;background:var(--gold);color:#2e2400}
 .chip.meal{background:#e28b3d;color:#331c00}
-.wrap{max-width:520px;margin:-30px auto 34px;padding:0 14px}
-.card{background:#fff;border-radius:18px;padding:18px;box-shadow:0 8px 28px #1d4a3816;margin-bottom:14px}
-input,button{width:100%;font-size:17px;padding:13px;border-radius:11px;margin-top:10px;border:1px solid #ddd6c4;background:#fff}
-input:focus{outline:2px solid var(--gold);border-color:var(--gold)}
-button{border:0;background:var(--green);color:#fff;font-weight:700;cursor:pointer}
-button.alt{background:var(--gold);color:#2e2400}
-.hint{color:var(--muted);font-size:13px;margin-top:12px;line-height:1.55}
-.warn{background:#fdf3e0;border:1px solid #ecd9a8;color:#6b5417;padding:11px 13px;border-radius:11px;font-size:14px;margin-top:10px;line-height:1.5;display:none}
-#reader{margin-top:12px;border-radius:12px;overflow:hidden}
-.result{font-size:18px}
-.result .code{font-family:ui-monospace,Menlo,monospace;color:var(--muted);font-size:13px;margin-top:8px}
-.ok{border-left:8px solid var(--ok)}.bad{border-left:8px solid var(--bad)}
-.verdict{font-weight:700;font-size:20px}.ok .verdict{color:var(--ok)}.bad .verdict{color:var(--bad)}
-.who{font-family:'Fraunces',Georgia,serif;font-size:24px;margin-top:6px}
-.meal-name{font-family:'Fraunces',Georgia,serif;font-size:34px;color:#8a5a00;margin:8px 0 2px}
-.diet{background:#fdf3e0;border-radius:9px;padding:8px 11px;font-size:15px;margin-top:8px}
-.prior{color:var(--muted);font-size:13px;margin-top:6px}
+.ev{opacity:.85;font-size:13px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#stage{flex:1;position:relative;background:#0c1f16;min-height:0}
+#reader{position:absolute;inset:0}
+#reader video{width:100%!important;height:100%!important;object-fit:cover}
+#camhint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#cfe0d6;font-size:14px;text-align:center;padding:24px;line-height:1.6}
+footer{flex:none;background:var(--green2);color:#cfe0d6;display:flex;justify-content:space-between;align-items:center;padding:11px 16px;font-size:13px;gap:10px}
+footer a{color:var(--goldsoft);text-decoration:none;font-weight:600}
+.screen{position:fixed;inset:0;background:var(--cream);z-index:30;display:none;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center}
+.screen .spark{color:var(--gold);font-size:22px}
+.screen .t{font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:var(--muted);margin-top:8px}
+.screen h2{font-family:'Fraunces',Georgia,serif;font-size:26px;margin:14px 0 4px}
+.screen .sub{color:var(--muted);font-size:15px;margin-bottom:20px;min-height:20px}
+.screen input{width:min(320px,86vw);font-size:24px;text-align:center;letter-spacing:10px;padding:13px;border-radius:13px;border:1px solid #ddd6c4;background:#fff}
+.screen input:focus{outline:2px solid var(--gold);border-color:var(--gold)}
+.screen button{width:min(320px,86vw);margin-top:14px;font-size:17px;padding:14px;border-radius:13px;border:0;background:var(--green);color:#fff;font-weight:700}
+.err{color:var(--bad);font-size:14px;margin-top:12px;min-height:18px}
+#pop{position:fixed;inset:0;z-index:40;display:none;align-items:center;justify-content:center;padding:22px;background:#12100bc9}
+#pop .box{background:#fff;border-radius:22px;max-width:420px;width:100%;padding:28px 22px 22px;text-align:center;position:relative;overflow:hidden}
+#pop .icon{width:76px;height:76px;border-radius:50%;margin:0 auto 12px;display:flex;align-items:center;justify-content:center;font-size:42px;color:#fff;font-weight:700}
+#pop.ok .icon{background:var(--ok)}#pop.bad .icon{background:var(--bad)}
+#pop .msg{font-weight:700;font-size:19px}
+#pop.ok .msg{color:var(--ok)}#pop.bad .msg{color:var(--bad)}
+#pop .who{font-family:'Fraunces',Georgia,serif;font-size:30px;margin-top:8px}
+#pop .meal{font-family:'Fraunces',Georgia,serif;font-size:40px;color:#8a5a00;margin-top:8px}
+#pop .diet{background:#fdf3e0;border-radius:10px;padding:9px 12px;font-size:16px;margin-top:12px;display:none}
+#pop .small{color:var(--muted);font-size:13px;margin-top:12px}
+#pop .bar{position:absolute;left:0;bottom:0;height:5px;background:var(--gold);width:100%;transform-origin:left}
+#pop.run .bar{animation:shrink 3.5s linear forwards}
+@keyframes shrink{to{transform:scaleX(0)}}
+#manualOv{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;background:#12100bc9;padding:22px}
+#manualOv .box{background:#fff;border-radius:18px;max-width:420px;width:100%;padding:20px}
+#manualOv b{font-family:'Fraunces',Georgia,serif;font-size:19px}
+#manualOv input{width:100%;font-size:17px;padding:12px;border-radius:10px;border:1px solid #ddd6c4;margin-top:12px}
+#manualOv button{width:100%;font-size:16px;padding:12px;border-radius:10px;border:0;margin-top:10px;background:var(--green);color:#fff;font-weight:700}
+#manualOv button.gray{background:#6d675a}
 </style></head><body>
-<div class="band">
+<header>
  <div class="brand"><span class="spark">&#10022;</span><span class="t">RCCC Community Events</span></div>
- <h1 id="title">Event check-in</h1>
- <div class="ev" id="evname"></div>
- <span class="chip" id="chip">Front desk</span>
+ <div class="hrow"><h1 id="title">Check-in</h1><span class="chip" id="chip">Front desk</span></div>
+ <div class="ev" id="evname">&nbsp;</div>
+</header>
+<div id="stage"><div id="camhint">Starting camera&hellip;</div><div id="reader"></div></div>
+<footer><span>Point the camera at a guest's QR code</span><span><a href="#" onclick="openManual();return false">Enter code</a>&nbsp;&middot;&nbsp;<a href="#" onclick="signOut();return false">Sign out</a></span></footer>
+
+<div class="screen" id="login">
+ <div class="spark">&#10022;</div><div class="t">RCCC Community Events</div>
+ <h2 id="ltitle">Operator sign-in</h2>
+ <div class="sub" id="lsub">&nbsp;</div>
+ <input id="pin" inputmode="numeric" type="password" placeholder="PIN" autocomplete="off" onkeydown="if(event.key==='Enter')login()">
+ <button onclick="login()">Unlock</button>
+ <div class="err" id="lerr"></div>
 </div>
-<div class="wrap">
- <div class="card">
-  <input id="pin" inputmode="numeric" type="password" placeholder="Operator PIN" autocomplete="off">
-  <div id="envwarn" class="warn"></div>
-  <div id="reader"></div>
-  <button class="alt" onclick="document.getElementById('photoIn').click()">&#128247;&nbsp; Take a photo of the code</button>
-  <input id="photoIn" type="file" accept="image/*" capture="environment" style="display:none" onchange="photoScan(this.files)">
-  <div id="filereader" style="display:none"></div>
-  <input id="manual" placeholder="QR value or registration token">
-  <button onclick="submitManual()">Process code</button>
-  <div class="hint">Live camera not opening? Use <b>Take a photo of the code</b> above &mdash; it uses the phone's own camera app and always works. In-app browsers (WeChat, Messenger&hellip;) block live cameras; tap <b>&middot;&middot;&middot; &rarr; Open in Browser</b> for Safari or Chrome. On iPhone also check Settings &rarr; Safari &rarr; Camera = Ask/Allow. <a href="#" onclick="camDiag();return false">Camera self-test</a></div>
-  <pre id="diag" style="display:none;background:#f2ede0;border-radius:9px;padding:10px;font-size:11px;white-space:pre-wrap;word-break:break-all;margin-top:10px"></pre>
- </div>
- <div id="output"></div>
-</div>
+
+<div id="pop" onclick="closePop()"><div class="box">
+ <div class="icon" id="picon">&#10003;</div>
+ <div class="msg" id="pmsg"></div>
+ <div class="who" id="pwho"></div>
+ <div class="meal" id="pmeal"></div>
+ <div class="diet" id="pdiet"></div>
+ <div class="small" id="psmall"></div>
+ <div class="bar"></div>
+</div></div>
+
+<div id="manualOv"><div class="box"><b>Enter code manually</b>
+ <input id="manual" placeholder="QR value or registration token" onkeydown="if(event.key==='Enter')submitManual()">
+ <button onclick="submitManual()">Process</button>
+ <button class="gray" onclick="closeManual()">Cancel</button>
+</div></div>
+
 <script>
 const q=new URLSearchParams(location.search);
 const MODE=q.get('mode')==='meal'?'meal':'checkin';
+const MEETING=(q.get('meeting')||'MAIN').trim();
 const EVENT=(q.get('event')||'').trim();
 const API=q.get('api')||'https://script.google.com/macros/s/AKfycbytJhW6z4YiRgiGV6YnuZ9uOoJBhl9eRiaDmYd1c07PAjC053i1gneCyOOX68Cg5MKFUQ/exec';
-let busy=false;
+const PINKEY='rccc-pin-'+MODE;
+let qr=null,frozen=false,popTimer=null,lastToken='',lastAt=0,pinMem='';
+
+function api(params){return fetch(API,{method:'POST',body:new URLSearchParams(params)}).then(function(r){return r.json()})}
+function getPin(){try{return localStorage.getItem(PINKEY)||pinMem}catch(e){return pinMem}}
+function setPin(v){pinMem=v;try{localStorage.setItem(PINKEY,v)}catch(e){}}
+function clearPin(){pinMem='';try{localStorage.removeItem(PINKEY)}catch(e){}}
+function hint(t){const h=document.getElementById('camhint');h.style.display='flex';h.textContent=t}
+
 function boot(){
- document.getElementById('title').textContent=MODE==='meal'?'Meal pickup':'Event check-in';
- const chip=document.getElementById('chip');
- chip.textContent=MODE==='meal'?'Kitchen station':'Front desk';
+ document.getElementById('title').textContent=MODE==='meal'?'Meal pickup':'Check-in';
+ const chip=document.getElementById('chip');chip.textContent=MODE==='meal'?'Kitchen':'Front desk';
  if(MODE==='meal')chip.classList.add('meal');
- if(!EVENT){show({ok:false,message:'This link is missing its event. Open the scanner from its link in the admin console.'});return}
- fetch(API,{method:'POST',body:new URLSearchParams({fn:'eventInfo',event:EVENT})})
-  .then(r=>r.json()).then(r=>{if(r&&r.ok)document.getElementById('evname').textContent=r.name}).catch(()=>{});
+ if(!EVENT){hint('This link is missing its event. Open the scanner from its link in the admin console.');return}
+ api({fn:'eventInfo',event:EVENT,meeting:MEETING}).then(function(r){if(r&&r.ok){
+  let line=r.name;
+  if(MODE==='checkin'&&r.meetingName&&r.meetingName!=='Main check-in')line=r.meetingName+' · '+r.name;
+  document.getElementById('evname').textContent=line;
+  document.getElementById('lsub').textContent=line;
+ }}).catch(function(){});
+ if(getPin()){startScanning()}else{showLogin()}
+}
+function showLogin(msg){document.getElementById('login').style.display='flex';document.getElementById('lerr').textContent=msg||''}
+function login(){const p=document.getElementById('pin').value.trim();if(!p)return;
+ document.getElementById('lerr').textContent='';
+ api({fn:'verifyPin',pin:p,mode:MODE}).then(function(r){
+  if(r&&r.ok){setPin(p);document.getElementById('login').style.display='none';startScanning()}
+  else document.getElementById('lerr').textContent=(r&&r.message)||'Incorrect PIN.'})
+ .catch(function(e){document.getElementById('lerr').textContent='Network error: '+e})}
+function signOut(){clearPin();location.reload()}
+
+function startScanning(){
  if(/MicroMessenger|FBAN|FBAV|Instagram|Line\//i.test(navigator.userAgent)){
-  const w=document.getElementById('envwarn');w.style.display='block';
-  w.innerHTML='This in-app browser blocks the camera. Tap <b>&middot;&middot;&middot;</b> (top right) and choose <b>Open in Browser / Safari</b>, or use manual entry below.';}
- if(!window.Html5QrcodeScanner){show({ok:false,message:'Camera scanner could not load. Use manual entry.'});return}
- const scanner=new Html5QrcodeScanner('reader',{fps:8,qrbox:{width:240,height:240}},false);scanner.render(onScan,()=>{});}
-function onScan(value){if(busy)return;process(value)}
-function submitManual(){process(document.getElementById('manual').value)}
-let fileScanner=null;
-function photoScan(files){if(!files||!files.length)return;
- if(!fileScanner)fileScanner=new Html5Qrcode('filereader');
- fileScanner.scanFile(files[0],false).then(function(t){process(t)})
-  .catch(function(){show({ok:false,message:'Could not read a QR code from that photo. Try again — closer, steady, and well lit.'})});
- document.getElementById('photoIn').value=''}
-async function camDiag(){const L=[];
- L.push('host: '+location.host);
- L.push('framed: '+(window.top!==window));
- L.push('mediaDevices: '+!!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia));
- try{const p=await navigator.permissions.query({name:'camera'});L.push('permission: '+p.state)}catch(e){L.push('permission: n/a')}
- try{const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});L.push('getUserMedia: OK');s.getTracks().forEach(t=>t.stop())}
- catch(e){L.push('getUserMedia: '+e.name+' — '+e.message)}
- L.push('ua: '+navigator.userAgent.slice(0,110));
- const d=document.getElementById('diag');d.style.display='block';d.textContent=L.join('\n')}
-function process(value){const pin=document.getElementById('pin').value;if(!pin){show({ok:false,message:'Enter the operator PIN first.'});return}
- busy=true;fetch(API,{method:'POST',body:new URLSearchParams({fn:'scan',value:value,pin:pin,mode:MODE,event:EVENT})})
-  .then(r=>r.json()).then(r=>{busy=false;show(r)})
-  .catch(e=>{busy=false;show({ok:false,message:'Network error: '+e})})}
-function show(r){const cls=r.ok?'ok':'bad';
- const meal=r.mealSelected?'<div class="meal-name">'+esc(r.mealSelected)+'</div>':'';
- const diet=r.dietaryNotes?'<div class="diet">Dietary note: '+esc(r.dietaryNotes)+'</div>':'';
- document.getElementById('output').innerHTML='<div class="card result '+cls+'">'+
-  '<div class="verdict">'+esc(r.message||'Unknown result')+'</div>'+
-  (r.fullName?'<div class="who">'+esc(r.fullName)+'</div>':'')+meal+diet+
-  (r.priorAt?'<div class="prior">Previous time: '+esc(String(r.priorAt))+'</div>':'')+
-  (r.registrationId?'<div class="code">'+esc(r.registrationId)+'</div>':'')+'</div>'}
-function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+  hint('This in-app browser blocks the camera. Tap ··· and choose Open in Browser / Safari.');return}
+ if(!window.Html5Qrcode){hint('Camera library failed to load. Use “Enter code” below.');return}
+ if(qr)return;
+ qr=new Html5Qrcode('reader');
+ const box=Math.round(Math.min(window.innerWidth,window.innerHeight)*0.62);
+ qr.start({facingMode:'environment'},{fps:8,qrbox:{width:box,height:box}},onScan,function(){})
+  .then(function(){document.getElementById('camhint').style.display='none'})
+  .catch(function(e){qr=null;hint('Camera could not start ('+((e&&e.name)||e)+'). Use “Enter code” below, or check Settings → Safari → Camera.')})
+}
+function onScan(text){const now=Date.now();
+ if(frozen)return;
+ if(text===lastToken&&now-lastAt<3500)return;
+ lastToken=text;lastAt=now;
+ process(text)}
+function openManual(){document.getElementById('manualOv').style.display='flex';document.getElementById('manual').focus()}
+function closeManual(){document.getElementById('manualOv').style.display='none'}
+function submitManual(){const v=document.getElementById('manual').value.trim();if(!v)return;
+ document.getElementById('manual').value='';closeManual();process(v)}
+function process(value){frozen=true;try{if(qr)qr.pause(true)}catch(e){}
+ api({fn:'scan',value:value,pin:getPin(),mode:MODE,event:EVENT,meeting:MEETING})
+ .then(function(r){if(r&&r.code==='UNAUTHORIZED'){clearPin();resume();showLogin('PIN no longer valid — sign in again.');return}showPop(r)})
+ .catch(function(e){showPop({ok:false,message:'Network error: '+e})})}
+function fmtTime(v){try{const d=new Date(v);if(!isNaN(d))return d.toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}catch(e){}return String(v)}
+function showPop(r){const pop=document.getElementById('pop');
+ pop.className=(r.ok?'ok':'bad');pop.style.display='flex';
+ document.getElementById('picon').innerHTML=r.ok?'&#10003;':'&#10005;';
+ document.getElementById('pmsg').textContent=r.message||'Unknown result';
+ document.getElementById('pwho').textContent=r.fullName||'';
+ document.getElementById('pmeal').textContent=(MODE==='meal'&&r.mealSelected)?r.mealSelected:'';
+ const diet=document.getElementById('pdiet');
+ if(MODE==='meal'&&r.dietaryNotes){diet.style.display='block';diet.textContent='Dietary note: '+r.dietaryNotes}else{diet.style.display='none'}
+ document.getElementById('psmall').textContent=[r.registrationId||'',r.priorAt?('previously: '+fmtTime(r.priorAt)):''].filter(Boolean).join(' · ');
+ void pop.offsetWidth;pop.classList.add('run');
+ clearTimeout(popTimer);popTimer=setTimeout(closePop,3500)}
+function closePop(){clearTimeout(popTimer);const pop=document.getElementById('pop');pop.style.display='none';pop.classList.remove('run');resume()}
+function resume(){frozen=false;try{if(qr)qr.resume()}catch(e){}}
 boot();
 </script></body></html>

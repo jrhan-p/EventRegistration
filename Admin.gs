@@ -17,18 +17,22 @@ function adminListEvents(pin) {
     const idx = headerIndex_(values[0]);
     for (let r = 1; r < values.length; r++) {
       const row = values[r];
-      if (!cleanText_(row[idx.event_id])) continue;
+      const eventId = cleanText_(row[idx.event_id]);
+      if (!eventId) continue;
+      const lite = { eventId: eventId, spreadsheetId: cleanText_(row[idx.spreadsheet_id]) };
       events.push({
-        eventId: cleanText_(row[idx.event_id]),
+        eventId: eventId,
         name: cleanText_(row[idx.event_name]),
         date: displayDate_(row[idx.event_date]),
         location: cleanText_(row[idx.location]),
         status: cleanText_(row[idx.status]).toUpperCase(),
         registrationUrl: cleanText_(row[idx.registration_url]),
-        checkinScannerUrl: scannerUrl_(cleanText_(row[idx.event_id]), APP.modes.CHECKIN),
-        mealScannerUrl: scannerUrl_(cleanText_(row[idx.event_id]), APP.modes.MEAL),
+        mealScannerUrl: scannerUrl_(eventId, APP.modes.MEAL),
         spreadsheetUrl: cleanText_(row[idx.spreadsheet_url]),
-        formEditUrl: cleanText_(row[idx.form_edit_url])
+        formEditUrl: cleanText_(row[idx.form_edit_url]),
+        meetings: eventMeetings_(lite).map(function(m) {
+          return { id: m.id, name: m.name, url: scannerUrl_(eventId, APP.modes.CHECKIN, m.id) };
+        })
       });
     }
   }
@@ -77,6 +81,18 @@ function adminEventAction(pin, eventId, action) {
   } else {
     throw new Error('Unknown action "' + wanted + '".');
   }
+  return adminListEvents(pin);
+}
+
+function adminAddMeeting(pin, eventId, name) {
+  requireAdmin_(pin);
+  const event = eventById_(eventId);
+  if (!event) throw new Error('Unknown event.');
+  const clean = cleanText_(name);
+  if (!clean) throw new Error('Enter a meeting name.');
+  const sheet = ensureSheet_(eventDb_(event), SHEETS.MEETINGS, MEETING_HEADERS, [['MAIN', 'Main check-in', true]]);
+  const meetingId = 'M-' + Utilities.getUuid().replace(/-/g, '').slice(0, 4).toUpperCase();
+  sheet.appendRow([meetingId, clean, true]);
   return adminListEvents(pin);
 }
 

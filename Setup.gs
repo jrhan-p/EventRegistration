@@ -6,8 +6,16 @@ const SHEETS = Object.freeze({
   MEALS: 'Meals',
   REGISTRATIONS: 'Registrations',
   SCAN_LOG: 'Scan Log',
-  FOOD_SUMMARY: 'Food Summary'
+  FOOD_SUMMARY: 'Food Summary',
+  MEETINGS: 'Meetings',
+  CHECKINS: 'Check-ins'
 });
+
+// A conference-style event can hold several meetings/sessions, each with its
+// own check-in link and its own duplicate detection. Every event starts with
+// the implicit MAIN meeting; meal pickup stays event-wide.
+const MEETING_HEADERS = Object.freeze(['meeting_id', 'meeting_name', 'active']);
+const CHECKIN_HEADERS = Object.freeze(['timestamp', 'meeting_id', 'registration_id', 'operator']);
 
 const REG_HEADERS = Object.freeze([
   'created_at', 'registration_id', 'qr_token', 'event_id', 'full_name', 'email',
@@ -31,8 +39,33 @@ const USER_HEADERS = Object.freeze([
 // must be served top-level. It talks back to this script through the doPost API.
 const SCANNER_BASE = 'https://jrhan-p.github.io/EventRegistration/scanner.html';
 
-function scannerUrl_(eventId, mode) {
-  return SCANNER_BASE + '?mode=' + mode + '&event=' + encodeURIComponent(eventId);
+function scannerUrl_(eventId, mode, meetingId) {
+  let url = SCANNER_BASE + '?mode=' + mode + '&event=' + encodeURIComponent(eventId);
+  if (meetingId && meetingId !== 'MAIN') url += '&meeting=' + encodeURIComponent(meetingId);
+  return url;
+}
+
+function eventMeetings_(event) {
+  const fallback = [{ id: 'MAIN', name: 'Main check-in' }];
+  try {
+    const sheet = eventDb_(event).getSheetByName(SHEETS.MEETINGS);
+    if (!sheet) return fallback;
+    const values = sheet.getDataRange().getValues();
+    const idx = headerIndex_(values[0]);
+    const list = values.slice(1)
+      .filter(function(r) { return bool_(r[idx.active]) && cleanText_(r[idx.meeting_id]); })
+      .map(function(r) { return { id: cleanText_(r[idx.meeting_id]), name: cleanText_(r[idx.meeting_name]) }; });
+    return list.length ? list : fallback;
+  } catch (err) {
+    return fallback;
+  }
+}
+
+function meetingName_(event, meetingId) {
+  const wanted = cleanText_(meetingId) || 'MAIN';
+  const hit = eventMeetings_(event).filter(function(m) { return m.id === wanted; })[0];
+  if (hit) return hit.name;
+  return wanted === 'MAIN' ? 'Main check-in' : '';
 }
 
 const EVENT_HEADERS = Object.freeze([
@@ -111,6 +144,8 @@ function provisionEvent_(eventsSheet, idx, rowNumber, row) {
   ensureSheet_(ss, SHEETS.REGISTRATIONS, REG_HEADERS);
   ensureSheet_(ss, SHEETS.SCAN_LOG, LOG_HEADERS);
   ensureSheet_(ss, SHEETS.FOOD_SUMMARY, ['meal_name', 'requested', 'marked_ordered', 'redeemed']);
+  ensureSheet_(ss, SHEETS.MEETINGS, MEETING_HEADERS, [['MAIN', 'Main check-in', true]]);
+  ensureSheet_(ss, SHEETS.CHECKINS, CHECKIN_HEADERS);
   if (ss.getSheets().length > 1) ss.deleteSheet(initialSheet);
   const form = FormApp.create(name + ' – Registration');
   requireVerifiedGoogleEmail_(form);

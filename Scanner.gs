@@ -1,31 +1,60 @@
-function processScan(scanValue, pin, mode, eventId) {
+function processScan(scanValue, pin, mode, eventId, meetingId) {
   const token = extractToken_(scanValue);
   const validMode = mode === APP.modes.CHECKIN || mode === APP.modes.MEAL;
   if (!validMode || !authorizePin_(pin, mode)) return { ok: false, code: 'UNAUTHORIZED', message: 'Operator PIN is incorrect.' };
   const event = eventById_(eventId);
-  if (!event) return { ok: false, code: 'NO_EVENT', message: 'Unknown event. Reopen the scanner from its link in the Events sheet.' };
+  if (!event) return { ok: false, code: 'NO_EVENT', message: 'Unknown event. Reopen the scanner from its link in the admin console.' };
+  const meeting = mode === APP.modes.CHECKIN ? (cleanText_(meetingId) || 'MAIN') : '';
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
     const found = findRegistration_(token, event);
     const record = found && rowToRecord_(found.values, found.index);
+    // Check-in duplicates are per meeting: swap in this meeting's prior time
+    // so evaluateScan_ judges the right scope.
+    if (record && mode === APP.modes.CHECKIN) record.checkedInAt = meetingCheckin_(event, meeting, record.registrationId);
     const decision = evaluateScan_(record, mode);
     const now = new Date();
     if (decision.ok) {
-      const column = mode === APP.modes.CHECKIN ? found.index.checked_in_at : found.index.meal_redeemed_at;
-      found.sheet.getRange(found.rowNumber, column + 1).setValue(now);
+      if (mode === APP.modes.CHECKIN) {
+        checkinsSheet_(event).appendRow([now, meeting, record.registrationId, Session.getActiveUser().getEmail() || 'PIN operator']);
+        if (!found.values[found.index.checked_in_at]) found.sheet.getRange(found.rowNumber, found.index.checked_in_at + 1).setValue(now);
+      } else {
+        found.sheet.getRange(found.rowNumber, found.index.meal_redeemed_at + 1).setValue(now);
+        refreshFoodSummaryFor_(event);
+      }
       found.sheet.getRange(found.rowNumber, found.index.updated_at + 1).setValue(now);
-      if (mode === APP.modes.MEAL) refreshFoodSummaryFor_(event);
     }
-    logScan_(event, record, mode, decision, now);
-    return Object.assign({}, decision, record ? {
-      registrationId: record.registrationId, fullName: record.fullName,
-      mealSelected: record.mealSelected, dietaryNotes: record.dietaryNotes,
-      timestamp: now.toISOString()
-    } : {});
+    logScan_(event, record, meeting ? mode + '@' + meeting : mode, decision, now);
+    // The check-in desk must not see meal choices; only the kitchen scanner may.
+    const extra = record ? {
+      registrationId: record.registrationId, fullName: record.fullName, timestamp: now.toISOString()
+    } : {};
+    if (record && mode === APP.modes.MEAL) {
+      extra.mealSelected = record.mealSelected;
+      extra.dietaryNotes = record.dietaryNotes;
+    }
+    return Object.assign({}, decision, extra);
   } finally {
     lock.releaseLock();
   }
+}
+
+function checkinsSheet_(event) {
+  return ensureSheet_(eventDb_(event), SHEETS.CHECKINS, CHECKIN_HEADERS);
+}
+
+function meetingCheckin_(event, meetingId, registrationId) {
+  const values = checkinsSheet_(event).getDataRange().getValues();
+  if (values.length < 2) return '';
+  const idx = headerIndex_(values[0]);
+  for (let r = 1; r < values.length; r++) {
+    if (cleanText_(values[r][idx.meeting_id]) === meetingId &&
+        cleanText_(values[r][idx.registration_id]) === registrationId) {
+      return values[r][idx.timestamp];
+    }
+  }
+  return '';
 }
 
 function findRegistration_(token, event) {

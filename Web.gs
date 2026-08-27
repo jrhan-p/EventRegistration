@@ -34,12 +34,19 @@ function doPost(e) {
   try {
     const p = (e && e.parameter) || {};
     const fn = cleanText_(p.fn);
-    if (fn === 'scan') return out(processScan(p.value, p.pin, p.mode, p.event));
+    if (fn === 'scan') return out(processScan(p.value, p.pin, p.mode, p.event, p.meeting));
+    if (fn === 'verifyPin') {
+      const mode = p.mode === APP.modes.MEAL ? APP.modes.MEAL : APP.modes.CHECKIN;
+      return out(authorizePin_(p.pin, mode) ? { ok: true } : { ok: false, message: 'Operator PIN is incorrect.' });
+    }
     if (fn === 'eventInfo') {
       const info = eventById_(p.event);
-      return out(info ? { ok: true, name: info.name, date: info.date, location: info.location, status: info.status }
-        : { ok: false, message: 'Unknown event.' });
+      return out(info ? {
+        ok: true, name: info.name, date: info.date, location: info.location, status: info.status,
+        meetingName: meetingName_(info, p.meeting)
+      } : { ok: false, message: 'Unknown event.' });
     }
+    if (fn === 'addMeeting') return out(Object.assign({ ok: true }, adminAddMeeting(p.pin, p.event, p.name)));
     if (fn === 'listEvents') return out(Object.assign({ ok: true }, adminListEvents(p.pin)));
     if (fn === 'createEvent') return out(Object.assign({ ok: true }, adminCreateEvent(p.pin, p.name, p.date, p.location)));
     if (fn === 'eventAction') return out(Object.assign({ ok: true }, adminEventAction(p.pin, p.event, p.action)));
