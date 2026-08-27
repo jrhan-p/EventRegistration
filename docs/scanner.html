@@ -1,5 +1,6 @@
 <!doctype html>
-<html><head><base target="_top"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Event scanner</title>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
 <style>
@@ -11,7 +12,7 @@ body{font-family:-apple-system,'Segoe UI',Arial,sans-serif;background:var(--crea
 .brand .spark{color:var(--goldsoft);font-size:15px}
 .brand span.t{font-size:11px;letter-spacing:.24em;text-transform:uppercase;opacity:.9}
 .band h1{font-family:'Fraunces',Georgia,serif;font-size:27px;margin:12px 0 3px;font-weight:700}
-.band .ev{opacity:.85;font-size:15px}
+.band .ev{opacity:.85;font-size:15px;min-height:20px}
 .chip{display:inline-block;margin-top:12px;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;padding:6px 14px;border-radius:99px;background:var(--gold);color:#2e2400}
 .chip.meal{background:#e28b3d;color:#331c00}
 .wrap{max-width:520px;margin:-30px auto 34px;padding:0 14px}
@@ -33,9 +34,9 @@ button{border:0;background:var(--green);color:#fff;font-weight:700;cursor:pointe
 </style></head><body>
 <div class="band">
  <div class="brand"><span class="spark">&#10022;</span><span class="t">RCCC Community Events</span></div>
- <h1><?= mode === 'meal' ? 'Meal pickup' : 'Event check-in' ?></h1>
- <div class="ev"><?= eventName ?></div>
- <span class="chip <?= mode === 'meal' ? 'meal' : '' ?>"><?= mode === 'meal' ? 'Kitchen station' : 'Front desk' ?></span>
+ <h1 id="title">Event check-in</h1>
+ <div class="ev" id="evname"></div>
+ <span class="chip" id="chip">Front desk</span>
 </div>
 <div class="wrap">
  <div class="card">
@@ -49,8 +50,19 @@ button{border:0;background:var(--green);color:#fff;font-weight:700;cursor:pointe
  <div id="output"></div>
 </div>
 <script>
-const MODE=<?!= JSON.stringify(mode) ?>;const EVENT=<?!= JSON.stringify(eventId) ?>;const API=<?!= JSON.stringify(webAppUrl) ?>;let busy=false;
-function start(){
+const q=new URLSearchParams(location.search);
+const MODE=q.get('mode')==='meal'?'meal':'checkin';
+const EVENT=(q.get('event')||'').trim();
+const API=q.get('api')||'https://script.google.com/macros/s/AKfycbytJhW6z4YiRgiGV6YnuZ9uOoJBhl9eRiaDmYd1c07PAjC053i1gneCyOOX68Cg5MKFUQ/exec';
+let busy=false;
+function boot(){
+ document.getElementById('title').textContent=MODE==='meal'?'Meal pickup':'Event check-in';
+ const chip=document.getElementById('chip');
+ chip.textContent=MODE==='meal'?'Kitchen station':'Front desk';
+ if(MODE==='meal')chip.classList.add('meal');
+ if(!EVENT){show({ok:false,message:'This link is missing its event. Open the scanner from its link in the admin console.'});return}
+ fetch(API,{method:'POST',body:new URLSearchParams({fn:'eventInfo',event:EVENT})})
+  .then(r=>r.json()).then(r=>{if(r&&r.ok)document.getElementById('evname').textContent=r.name}).catch(()=>{});
  if(/MicroMessenger|FBAN|FBAV|Instagram|Line\//i.test(navigator.userAgent)){
   const w=document.getElementById('envwarn');w.style.display='block';
   w.innerHTML='This in-app browser blocks the camera. Tap <b>&middot;&middot;&middot;</b> (top right) and choose <b>Open in Browser / Safari</b>, or use manual entry below.';}
@@ -71,5 +83,5 @@ function show(r){const cls=r.ok?'ok':'bad';
   (r.priorAt?'<div class="prior">Previous time: '+esc(String(r.priorAt))+'</div>':'')+
   (r.registrationId?'<div class="code">'+esc(r.registrationId)+'</div>':'')+'</div>'}
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-start();
+boot();
 </script></body></html>

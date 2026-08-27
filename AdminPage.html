@@ -1,0 +1,85 @@
+<!doctype html>
+<html><head><base target="_top"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
+<style>
+:root{--green:#1d4a38;--green2:#123325;--gold:#c9a227;--goldsoft:#e6c96b;--cream:#faf6ec;--ink:#26221a;--muted:#8a8272;--ok:#1a7f4e;--bad:#b3261e}
+*{box-sizing:border-box}
+body{font-family:-apple-system,'Segoe UI',Arial,sans-serif;background:var(--cream);margin:0;color:var(--ink)}
+.band{background:linear-gradient(150deg,var(--green),var(--green2));color:#fff;padding:20px 18px 48px}
+.brand{display:flex;align-items:center;gap:8px}
+.brand .spark{color:var(--goldsoft);font-size:15px}
+.brand span.t{font-size:11px;letter-spacing:.24em;text-transform:uppercase;opacity:.9}
+.band h1{font-family:'Fraunces',Georgia,serif;font-size:27px;margin:12px 0 3px;font-weight:700}
+.band .sub{opacity:.85;font-size:14px}
+.wrap{max-width:680px;margin:-30px auto 34px;padding:0 14px}
+.card{background:#fff;border-radius:18px;padding:18px;box-shadow:0 8px 28px #1d4a3816;margin-bottom:14px}
+h2{font-family:'Fraunces',Georgia,serif;font-size:20px;margin:0 0 8px}
+input,button{box-sizing:border-box;font-size:16px;padding:12px;border-radius:11px;margin-top:8px;border:1px solid #ddd6c4;background:#fff}
+input{width:100%}
+input:focus{outline:2px solid var(--gold);border-color:var(--gold)}
+button{border:0;background:var(--green);color:#fff;font-weight:700;cursor:pointer;margin-right:8px;padding:12px 18px}
+button.gray{background:#6d675a}button.red{background:var(--bad)}
+button:disabled{background:#b6b0a2;cursor:wait}
+.muted{color:var(--muted);font-size:13px;line-height:1.5;margin-top:8px}
+.links{margin:10px 0}
+.links a{display:inline-block;margin:0 14px 6px 0;font-size:14px;color:var(--green);font-weight:600}
+.status{font-size:11px;font-weight:700;letter-spacing:.08em;padding:3px 12px;border-radius:99px;display:inline-block;vertical-align:middle}
+.ACTIVE{background:#e3f2e8;color:var(--ok)}.CLOSED{background:#fbe7e5;color:var(--bad)}
+.evmeta{color:var(--muted);font-size:13px;margin:4px 0 6px}
+#msg{padding:11px 15px;border-radius:11px;margin-bottom:14px;display:none;font-size:15px}
+#msg.ok{background:#e3f2e8;color:#14563a;display:block}#msg.bad{background:#fbe7e5;color:#8c1d16;display:block}
+</style></head><body>
+<div class="band">
+ <div class="brand"><span class="spark">&#10022;</span><span class="t">RCCC Community Events</span></div>
+ <h1>Event admin</h1>
+ <div class="sub">Create and operate events &mdash; everything here also appears in the master spreadsheet.</div>
+</div>
+<div class="wrap">
+<div class="card">
+<input id="pin" inputmode="numeric" type="password" placeholder="Admin PIN" autocomplete="off">
+<button onclick="refresh()">Unlock / Refresh</button></div>
+<div id="msg"></div>
+<div class="card" id="create" style="display:none"><h2>New event</h2>
+<input id="name" placeholder="Event name (e.g. Rummage Sale Lunch)">
+<input id="date" placeholder="Date &amp; time (e.g. 2026-09-20 11:30 AM)">
+<input id="loc" placeholder="Location (e.g. Fellowship Hall)">
+<button onclick="createEvent()">Create event</button>
+<div class="muted">Creates the event's spreadsheet, registration form, and scanner links in one step. Customize the form afterward via its edit link.</div></div>
+<div id="list"></div>
+<div class="card" id="tools" style="display:none"><h2>Maintenance</h2>
+<button class="red" onclick="cleanup()">Remove legacy single-event data</button>
+<div class="muted">Deletes the old test tabs, test users, and retired form from the original deployment. Safe to run more than once.</div></div>
+</div>
+<script>
+const API='<?= webAppUrl ?>';
+let busy=false;
+const LABELS={listEvents:'Loading events…',createEvent:'Creating the event — this takes about 20 seconds, please wait…',eventAction:'Applying…',cleanupLegacy:'Cleaning up…'};
+function pin(){return document.getElementById('pin').value}
+function note(t,ok){const m=document.getElementById('msg');m.textContent=t;m.className=ok?'ok':'bad';m.scrollIntoView({block:'nearest'})}
+function setBusy(b){busy=b;document.querySelectorAll('button').forEach(function(x){x.disabled=b})}
+function call(fn,extra){if(busy){note('Still working on the previous action — please wait.',false);return}
+ if(!pin()){note('Enter the admin PIN first.',false);return}
+ setBusy(true);note(LABELS[fn]||'Working…',true);
+ fetch(API,{method:'POST',body:new URLSearchParams(Object.assign({fn:fn,pin:pin()},extra||{}))})
+  .then(function(r){return r.json()})
+  .then(function(r){setBusy(false);if(!r||r.ok===false){note((r&&r.message)||'Failed.',false);return}note('Done.',true);render(r)})
+  .catch(function(e){setBusy(false);note('Network error: '+e,false)})}
+function refresh(){call('listEvents')}
+function createEvent(){const n=document.getElementById('name').value;if(!n.trim()){note('Enter an event name.',false);return}
+ call('createEvent',{name:n,date:document.getElementById('date').value,location:document.getElementById('loc').value})}
+function act(id,a){if(a!=='reopen'&&!confirm(a+' this event?'))return;call('eventAction',{event:id,action:a})}
+function cleanup(){if(confirm('Remove the legacy test data? This cannot be undone.'))call('cleanupLegacy')}
+function esc(s){return String(s||'').replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+function render(r){document.getElementById('create').style.display='block';document.getElementById('tools').style.display='block';
+ const list=document.getElementById('list');
+ if(!r.events.length){list.innerHTML='<div class="card muted">No events yet. Create the first one above.</div>';return}
+ list.innerHTML=r.events.map(function(ev){
+  const links=[['Registration form',ev.registrationUrl],['Check-in scanner',ev.checkinScannerUrl],['Meal scanner',ev.mealScannerUrl],['Spreadsheet',ev.spreadsheetUrl],['Edit form',ev.formEditUrl]]
+   .filter(function(l){return l[1]}).map(function(l){return '<a href="'+esc(l[1])+'" target="_blank">'+esc(l[0])+'</a>'}).join('');
+  const buttons=(ev.status==='ACTIVE'
+   ? '<button onclick="act(\''+esc(ev.eventId)+'\',\'finalize\')">Finalize meal order</button><button class="gray" onclick="act(\''+esc(ev.eventId)+'\',\'close\')">Close registration</button>'
+   : '<button class="gray" onclick="act(\''+esc(ev.eventId)+'\',\'reopen\')">Reopen registration</button>');
+  return '<div class="card"><h2>'+esc(ev.name)+' <span class="status '+esc(ev.status)+'">'+esc(ev.status)+'</span></h2>'+
+   '<div class="evmeta">'+esc(ev.eventId)+(ev.date?' · '+esc(ev.date):'')+(ev.location?' · '+esc(ev.location):'')+'</div>'+
+   '<div class="links">'+links+'</div><div>'+buttons+'</div></div>'}).join('')}
+</script></body></html>

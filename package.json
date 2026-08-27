@@ -2,5 +2,10 @@
   "name": "church-event-registration",
   "private": true,
   "version": "0.1.0",
-  "scripts": { "test": "node tests/core.test.js" }
+  "scripts": {
+    "test": "node tests/core.test.js"
+  },
+  "devDependencies": {
+    "@google/clasp": "^3.4.0"
+  }
 }

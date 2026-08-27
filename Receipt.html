@@ -1,5 +1,55 @@
-<!doctype html><html><head><base target="_top"><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>body{font-family:Arial,sans-serif;background:#f4f6f8;margin:0;color:#222}.card{max-width:480px;margin:20px auto;background:#fff;padding:24px;text-align:center;border-radius:16px;box-shadow:0 2px 14px #0002}img{width:min(320px,90%)}h1{font-size:25px}.meal{font-size:21px;font-weight:bold}.id{color:#667085}</style></head>
-<body><div class="card"><h1><?= eventName ?></h1><p><b><?= record.fullName ?></b></p><p><?= eventDate ?><br><?= location ?></p>
-<img src="<?= qrUrl ?>" alt="Registration QR code"><p class="meal">Food: <?= record.mealSelected ?></p><p class="id"><?= record.registrationId ?></p>
-<p>Present this QR code at event check-in and meal pickup.</p></div></body></html>
+<!doctype html>
+<html><head><base target="_top"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
+<style>
+:root{--green:#1d4a38;--green2:#123325;--gold:#c9a227;--goldsoft:#e6c96b;--cream:#faf6ec;--ink:#26221a;--muted:#8a8272}
+*{box-sizing:border-box}
+body{font-family:-apple-system,'Segoe UI',Arial,sans-serif;background:var(--cream);margin:0;color:var(--ink);padding:26px 14px 40px}
+.pass{max-width:420px;margin:0 auto;filter:drop-shadow(0 10px 26px #1d4a3822)}
+.top{background:linear-gradient(150deg,var(--green),var(--green2));color:#fff;border-radius:18px 18px 0 0;padding:22px 24px 18px}
+.brand{display:flex;align-items:center;gap:8px}
+.brand .spark{color:var(--goldsoft);font-size:14px}
+.brand span.t{font-size:10px;letter-spacing:.26em;text-transform:uppercase;opacity:.9}
+.top h1{font-family:'Fraunces',Georgia,serif;font-size:25px;margin:10px 0 4px;font-weight:700}
+.top .when{font-size:14px;opacity:.85}
+.mid{background:#fff;padding:18px 24px 4px}
+.label{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+.guest{font-family:'Fraunces',Georgia,serif;font-size:26px;margin:2px 0 14px}
+.row{display:flex;justify-content:space-between;gap:12px;margin-bottom:16px}
+.row .cell{min-width:0}
+.row .v{font-size:16px;font-weight:700;margin-top:2px}
+.row .v.mono{font-family:ui-monospace,Menlo,monospace;font-weight:400;font-size:14px}
+.perf{position:relative;background:#fff;height:26px}
+.perf::before{content:'';position:absolute;left:16px;right:16px;top:50%;border-top:2px dashed #ddd6c4}
+.perf .n{position:absolute;top:50%;width:26px;height:26px;border-radius:50%;background:var(--cream);transform:translateY(-50%)}
+.perf .n.l{left:-13px}.perf .n.r{right:-13px}
+.stub{background:#fff;border-radius:0 0 18px 18px;padding:8px 24px 24px;text-align:center}
+.stub img{width:min(250px,80%);border-radius:8px}
+.note{color:var(--muted);font-size:13px;margin-top:10px;line-height:1.5}
+.rid{font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--muted);letter-spacing:.08em;margin-top:8px}
+.foot{max-width:420px;margin:16px auto 0;text-align:center;color:var(--muted);font-size:12px}
+.foot .spark{color:var(--gold)}
+</style></head><body>
+<div class="pass">
+ <div class="top">
+  <div class="brand"><span class="spark">&#10022;</span><span class="t">RCCC Community Events</span></div>
+  <h1><?= eventName ?></h1>
+  <div class="when"><?= eventDate ?><?= location ? ' · ' + location : '' ?></div>
+ </div>
+ <div class="mid">
+  <div class="label">Guest</div>
+  <div class="guest"><?= record.fullName ?></div>
+  <div class="row">
+   <div class="cell"><div class="label">Meal</div><div class="v"><?= record.mealSelected || '—' ?></div></div>
+   <div class="cell" style="text-align:right"><div class="label">Registration</div><div class="v mono"><?= record.registrationId ?></div></div>
+  </div>
+ </div>
+ <div class="perf"><span class="n l"></span><span class="n r"></span></div>
+ <div class="stub">
+  <img src="<?= qrUrl ?>" alt="Registration QR code">
+  <div class="note">Present this code at event check-in<br>and at meal pickup.</div>
+  <div class="rid"><?= record.registrationId ?></div>
+ </div>
+</div>
+<div class="foot"><span class="spark">&#10022;</span> We look forward to seeing you.</div>
+</body></html>

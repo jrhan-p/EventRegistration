@@ -1,11 +1,13 @@
-function processScan(scanValue, pin, mode) {
+function processScan(scanValue, pin, mode, eventId) {
   const token = extractToken_(scanValue);
   const validMode = mode === APP.modes.CHECKIN || mode === APP.modes.MEAL;
   if (!validMode || !authorizePin_(pin, mode)) return { ok: false, code: 'UNAUTHORIZED', message: 'Operator PIN is incorrect.' };
+  const event = eventById_(eventId);
+  if (!event) return { ok: false, code: 'NO_EVENT', message: 'Unknown event. Reopen the scanner from its link in the Events sheet.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
-    const found = findRegistration_(token);
+    const found = findRegistration_(token, event);
     const record = found && rowToRecord_(found.values, found.index);
     const decision = evaluateScan_(record, mode);
     const now = new Date();
@@ -13,9 +15,9 @@ function processScan(scanValue, pin, mode) {
       const column = mode === APP.modes.CHECKIN ? found.index.checked_in_at : found.index.meal_redeemed_at;
       found.sheet.getRange(found.rowNumber, column + 1).setValue(now);
       found.sheet.getRange(found.rowNumber, found.index.updated_at + 1).setValue(now);
-      if (mode === APP.modes.MEAL) refreshFoodSummary();
+      if (mode === APP.modes.MEAL) refreshFoodSummaryFor_(event);
     }
-    logScan_(record, mode, decision, now);
+    logScan_(event, record, mode, decision, now);
     return Object.assign({}, decision, record ? {
       registrationId: record.registrationId, fullName: record.fullName,
       mealSelected: record.mealSelected, dietaryNotes: record.dietaryNotes,
@@ -26,8 +28,9 @@ function processScan(scanValue, pin, mode) {
   }
 }
 
-function findRegistration_(token) {
-  const sheet = db_().getSheetByName(SHEETS.REGISTRATIONS);
+function findRegistration_(token, event) {
+  const sheet = eventDb_(event).getSheetByName(SHEETS.REGISTRATIONS);
+  if (!sheet) return null;
   const values = sheet.getDataRange().getValues();
   if (values.length < 2) return null;
   const index = headerIndex_(values[0]);
@@ -52,17 +55,18 @@ function authorizePin_(pin, mode) {
   return Boolean(expected) && hash_(String(pin)) === expected;
 }
 
-function logScan_(record, mode, decision, timestamp) {
-  db_().getSheetByName(SHEETS.SCAN_LOG).appendRow([
-    timestamp, setting_('EVENT_ID'), record ? record.registrationId : '', mode,
+function logScan_(event, record, mode, decision, timestamp) {
+  eventDb_(event).getSheetByName(SHEETS.SCAN_LOG).appendRow([
+    timestamp, event.eventId, record ? record.registrationId : '', mode,
     decision.code, Session.getActiveUser().getEmail() || 'PIN operator', decision.message
   ]);
 }
 
-function refreshFoodSummary() {
-  const reg = db_().getSheetByName(SHEETS.REGISTRATIONS).getDataRange().getValues();
+function refreshFoodSummaryFor_(event) {
+  const ss = eventDb_(event);
+  const reg = ss.getSheetByName(SHEETS.REGISTRATIONS).getDataRange().getValues();
   const summary = {};
-  activeMeals_().forEach(function(m) { summary[m] = [m, 0, 0, 0]; });
+  activeMealsFor_(event).forEach(function(m) { summary[m] = [m, 0, 0, 0]; });
   if (reg.length > 1) {
     const i = headerIndex_(reg[0]);
     reg.slice(1).forEach(function(r) {
@@ -74,7 +78,7 @@ function refreshFoodSummary() {
       if (r[i.meal_redeemed_at]) summary[meal][3]++;
     });
   }
-  const sheet = db_().getSheetByName(SHEETS.FOOD_SUMMARY);
+  const sheet = ss.getSheetByName(SHEETS.FOOD_SUMMARY);
   sheet.clearContents();
   const rows = [['meal_name', 'requested', 'marked_ordered', 'redeemed']].concat(Object.keys(summary).sort().map(function(k) { return summary[k]; }));
   sheet.getRange(1, 1, rows.length, 4).setValues(rows);
