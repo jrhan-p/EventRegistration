@@ -14,8 +14,8 @@ body{font-family:-apple-system,'Segoe UI',Arial,sans-serif;background:var(--crea
 .top .when{font-size:14px;opacity:.85}
 .mid{background:#fff;padding:18px 24px 4px}
 .label{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
-.guest{font-family:'Fraunces',Georgia,serif;font-size:26px;margin:2px 0 14px}
-.row{display:flex;justify-content:space-between;gap:12px;margin-bottom:16px}
+.guest{font-family:'Fraunces',Georgia,serif;font-size:22px;margin-top:2px}
+.row{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px}
 .row .cell{min-width:0}
 .row .v{font-size:16px;font-weight:700;margin-top:2px}
 .row .v.mono{font-family:ui-monospace,Menlo,monospace;font-weight:400;font-size:14px}
@@ -37,10 +37,8 @@ body{font-family:-apple-system,'Segoe UI',Arial,sans-serif;background:var(--crea
   <div class="when"><?= eventDate ?><?= location ? ' · ' + location : '' ?></div>
  </div>
  <div class="mid">
-  <div class="label">Guest</div>
-  <div class="guest"><?= record.fullName ?></div>
   <div class="row">
-   <div class="cell"><div class="label">Meal</div><div class="v"><?= record.mealSelected || '—' ?></div></div>
+   <div class="cell"><div class="label">Guest</div><div class="guest"><?= record.fullName ?></div></div>
    <div class="cell" style="text-align:right"><div class="label">Registration</div><div class="v mono"><?= record.registrationId ?></div></div>
   </div>
  </div>
@@ -49,6 +47,7 @@ body{font-family:-apple-system,'Segoe UI',Arial,sans-serif;background:var(--crea
   <img src="<?= qrUrl ?>" alt="Registration QR code">
   <div class="note">Present this code at event check-in<br>and at meal pickup.</div>
   <div class="rid"><?= record.registrationId ?></div>
+  <?!= walletButtons ?>
  </div>
 </div>
 <div class="foot"><span class="spark">&#10022;</span> We look forward to seeing you.</div>

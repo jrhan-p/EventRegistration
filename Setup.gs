@@ -16,7 +16,10 @@ const SHEETS = Object.freeze({
 // PIN, and the PIN alone routes the universal scanner page to the right
 // station — closing an event silently disables all of its PINs. PINs are
 // stored in the event's own spreadsheet so organizers can read and change them.
-const STATION_HEADERS = Object.freeze(['station_id', 'station_name', 'type', 'pin', 'active']);
+// location / info_url are structured metadata (venue room, map or info link)
+// rendered by the scanner header and, later, pass backs — never concatenated
+// into names.
+const STATION_HEADERS = Object.freeze(['station_id', 'station_name', 'type', 'pin', 'active', 'location', 'info_url']);
 const CHECKIN_HEADERS = Object.freeze(['timestamp', 'station_id', 'registration_id', 'operator']);
 
 const REG_HEADERS = Object.freeze([
@@ -54,7 +57,9 @@ function eventStations_(event) {
           id: cleanText_(r[idx.station_id]),
           name: cleanText_(r[idx.station_name]),
           type: cleanText_(r[idx.type]).toLowerCase() === 'meal' ? 'meal' : 'checkin',
-          pin: cleanText_(r[idx.pin])
+          pin: cleanText_(r[idx.pin]),
+          location: idx.location !== undefined ? cleanText_(r[idx.location]) : '',
+          infoUrl: idx.info_url !== undefined ? cleanText_(r[idx.info_url]) : ''
         };
       });
   } catch (err) {
@@ -68,8 +73,8 @@ function ensureStations_(event) {
   if (sheet) return sheet;
   const taken = allStationPins_();
   return ensureSheet_(ss, SHEETS.STATIONS, STATION_HEADERS, [
-    ['MAIN', 'Main check-in', 'checkin', genStationPin_(taken), true],
-    ['MEAL', 'Meal pickup', 'meal', genStationPin_(taken), true]
+    ['MAIN', 'Main check-in', 'checkin', genStationPin_(taken), true, '', ''],
+    ['MEAL', 'Meal pickup', 'meal', genStationPin_(taken), true, '', '']
   ]);
 }
 
@@ -95,7 +100,10 @@ function resolvePin_(pin) {
     const stations = eventStations_(events[i]);
     for (let s = 0; s < stations.length; s++) {
       if (stations[s].pin && stations[s].pin === clean) {
-        const station = { event: events[i], stationId: stations[s].id, stationName: stations[s].name, type: stations[s].type };
+        const station = {
+          event: events[i], stationId: stations[s].id, stationName: stations[s].name,
+          type: stations[s].type, location: stations[s].location, infoUrl: stations[s].infoUrl
+        };
         cache.put('pin:' + clean, JSON.stringify(station), 300);
         return station;
       }
@@ -197,8 +205,8 @@ function provisionEvent_(eventsSheet, idx, rowNumber, row) {
   ensureSheet_(ss, SHEETS.FOOD_SUMMARY, ['meal_name', 'requested', 'marked_ordered', 'redeemed', 'remaining']);
   const takenPins = allStationPins_();
   ensureSheet_(ss, SHEETS.STATIONS, STATION_HEADERS, [
-    ['MAIN', 'Main check-in', 'checkin', genStationPin_(takenPins), true],
-    ['MEAL', 'Meal pickup', 'meal', genStationPin_(takenPins), true]
+    ['MAIN', 'Main check-in', 'checkin', genStationPin_(takenPins), true, '', ''],
+    ['MEAL', 'Meal pickup', 'meal', genStationPin_(takenPins), true, '', '']
   ]);
   ensureSheet_(ss, SHEETS.CHECKINS, CHECKIN_HEADERS);
   if (ss.getSheets().length > 1) ss.deleteSheet(initialSheet);

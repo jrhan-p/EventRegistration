@@ -24,7 +24,7 @@ function adminListEvents(pin) {
       try {
         ensureStations_(lite);
         stations = eventStations_(lite).map(function(s) {
-          return { id: s.id, name: s.name, type: s.type, pin: s.pin };
+          return { id: s.id, name: s.name, type: s.type, pin: s.pin, location: s.location };
         });
       } catch (err) {}
       events.push({
@@ -122,7 +122,7 @@ function adminAddStation(pin, eventId, name) {
   if (!clean) throw new Error('Enter a station name.');
   const sheet = ensureStations_(event);
   const stationId = 'S-' + Utilities.getUuid().replace(/-/g, '').slice(0, 4).toUpperCase();
-  sheet.appendRow([stationId, clean, 'checkin', genStationPin_(allStationPins_()), true]);
+  sheet.appendRow([stationId, clean, 'checkin', genStationPin_(allStationPins_()), true, '', '']);
   return adminListEvents(pin);
 }
 

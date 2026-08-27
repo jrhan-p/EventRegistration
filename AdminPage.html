@@ -94,7 +94,7 @@ function render(r){document.getElementById('create').style.display='block';docum
   const links=[['Registration form',ev.registrationUrl],['Spreadsheet',ev.spreadsheetUrl],['Edit form',ev.formEditUrl]]
    .filter(function(l){return l[1]}).map(function(l){return '<a href="'+esc(l[1])+'" target="_blank">'+esc(l[0])+'</a>'}).join('');
   const stations=(ev.stations||[]).map(function(s){
-   return '<tr><td style="padding:4px 14px 4px 0">'+esc(s.name)+'</td>'+
+   return '<tr><td style="padding:4px 14px 4px 0">'+esc(s.name)+(s.location?' <span style="color:#8a8272;font-size:12px">('+esc(s.location)+')</span>':'')+'</td>'+
     '<td style="padding:4px 14px 4px 0;color:#8a8272">'+(s.type==='meal'?'Meal pickup':'Check-in')+'</td>'+
     '<td style="padding:4px 0;font-family:ui-monospace,Menlo,monospace;font-weight:700;letter-spacing:2px">'+esc(s.pin||'—')+'</td></tr>'}).join('');
   const buttons=(ev.status==='ACTIVE'

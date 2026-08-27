@@ -1,0 +1,6 @@
+name = "rccc-pass"
+main = "src/index.js"
+compatibility_date = "2026-08-01"
+
+[vars]
+APPS_URL = "https://script.google.com/macros/s/AKfycbytJhW6z4YiRgiGV6YnuZ9uOoJBhl9eRiaDmYd1c07PAjC053i1gneCyOOX68Cg5MKFUQ/exec"

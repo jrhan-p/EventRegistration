@@ -40,7 +40,8 @@ function doPost(e) {
       const station = resolvePin_(p.pin);
       return out(station ? {
         ok: true, type: station.type, stationName: station.stationName,
-        eventId: station.event.eventId, eventName: station.event.name
+        eventId: station.event.eventId, eventName: station.event.name,
+        location: station.location || '', infoUrl: station.infoUrl || ''
       } : { ok: false, message: 'Operator PIN is incorrect.' });
     }
     if (fn === 'eventInfo') {
@@ -54,6 +55,24 @@ function doPost(e) {
     // error page before the script ever runs.
     if (fn === 'setTwilio') return out(adminSetTwilio(p.pin, p.twSid, p.twToken, p.twFrom));
     if (fn === 'testSms') return out(adminTestSms(p.pin, p.to));
+    if (fn === 'setWalletConfig') return out(adminSetWalletConfig(p.pin, p.sa, p.appleUrl));
+    if (fn === 'passData') {
+      const token = cleanText_(p.token);
+      const events = allEvents_();
+      for (let i = 0; i < events.length; i++) {
+        const found = findRegistration_(token, events[i]);
+        if (!found) continue;
+        const r = rowToRecord_(found.values, found.index);
+        if (r.status !== APP.statuses.ACTIVE) break;
+        return out({
+          ok: true, fullName: r.fullName, registrationId: r.registrationId,
+          eventId: events[i].eventId, eventName: events[i].name,
+          eventDate: cleanText_(events[i].date), location: cleanText_(events[i].location),
+          qr: APP.qrPrefix + token
+        });
+      }
+      return out({ ok: false, message: 'Registration not found.' });
+    }
     if (fn === 'listEvents') return out(Object.assign({ ok: true }, adminListEvents(p.pin)));
     if (fn === 'createEvent') return out(Object.assign({ ok: true }, adminCreateEvent(p.pin, p.name, p.date, p.location)));
     if (fn === 'eventAction') return out(Object.assign({ ok: true }, adminEventAction(p.pin, p.event, p.action)));
@@ -85,11 +104,13 @@ function renderReceipt_(token, eventId) {
     if (!found) continue;
     const event = candidates[i];
     const template = HtmlService.createTemplateFromFile('Receipt');
-    template.record = rowToRecord_(found.values, found.index);
+    const record = rowToRecord_(found.values, found.index);
+    template.record = record;
     template.eventName = event.name;
     template.eventDate = event.date;
     template.location = event.location;
     template.qrUrl = 'https://quickchart.io/qr?size=320&text=' + encodeURIComponent(APP.qrPrefix + clean);
+    template.walletButtons = walletButtons_(Object.assign({ token: clean }, record), event);
     return page_(template.evaluate().setTitle('Registration receipt'));
   }
   return page_(HtmlService.createHtmlOutput('<h2 style="font-family:Arial;text-align:center;margin-top:40px">Registration not found</h2>'));

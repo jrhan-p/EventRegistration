@@ -118,6 +118,7 @@ function applyStation(r){STATION=r;
  chip.classList.toggle('meal',isMeal());
  let line=r.eventName||'';
  if(!isMeal()&&r.stationName&&r.stationName!=='Main check-in')line=r.stationName+' · '+line;
+ if(r.location)line+=' · '+r.location;
  document.getElementById('evname').textContent=line}
 
 function boot(){

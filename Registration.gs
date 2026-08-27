@@ -153,36 +153,38 @@ function sendConfirmation_(record, event) {
   const qrUrl = 'https://quickchart.io/qr?size=260&text=' + encodeURIComponent(qrValue);
   const subject = (record.updated ? 'Registration updated: ' : 'Registration confirmed: ') + event.name;
   const updatedNote = record.updated
-    ? '<div style="font-size:13px;color:#1a7f4e;padding:0 24px 12px;font-family:Arial,Helvetica,sans-serif">Your registration was updated &mdash; the same QR code still works.</div>'
+    ? '<tr><td style="font-size:12px;color:#1a7f4e;padding:0 22px 10px;font-family:Arial,Helvetica,sans-serif" align="center">Your registration was updated &mdash; the same QR code still works.</td></tr>'
     : '';
   const label = 'font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#8a8272';
+  // The ticket deliberately shows no entitlements (meal, sessions, …):
+  // stations resolve those at scan time. The pass is identity + credential only.
   const html =
-    '<div style="background:#faf6ec;padding:26px 0">' +
+    '<div style="background:#faf6ec;padding:18px 0">' +
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">' +
-    '<table role="presentation" cellpadding="0" cellspacing="0" style="width:420px;max-width:94%;background:#ffffff;border-radius:18px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;color:#26221a">' +
-    '<tr><td style="background:#1d4a38;padding:22px 24px 18px">' +
-    '<div style="color:#e6c96b;font-size:11px;letter-spacing:4px;text-transform:uppercase">&#10022;&nbsp; RCCC Community Events</div>' +
-    '<div style="color:#ffffff;font-family:Georgia,\'Times New Roman\',serif;font-size:24px;padding-top:9px">' + html_(event.name) + '</div>' +
-    '<div style="color:#bcd2c5;font-size:13px;padding-top:5px">' + html_(event.date) + (event.location ? ' &middot; ' + html_(event.location) : '') + '</div>' +
+    '<table role="presentation" cellpadding="0" cellspacing="0" style="width:400px;max-width:94%;background:#ffffff;border-radius:16px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;color:#26221a">' +
+    '<tr><td style="background:#1d4a38;padding:16px 22px 13px">' +
+    '<div style="color:#e6c96b;font-size:10px;letter-spacing:3px;text-transform:uppercase">&#10022;&nbsp; RCCC Community Events</div>' +
+    '<div style="color:#ffffff;font-family:Georgia,\'Times New Roman\',serif;font-size:20px;padding-top:6px">' + html_(event.name) + '</div>' +
+    '<div style="color:#bcd2c5;font-size:12px;padding-top:3px">' + html_(event.date) + (event.location ? ' &middot; ' + html_(event.location) : '') + '</div>' +
     '</td></tr>' +
-    '<tr><td style="padding:20px 24px 0">' +
-    '<div style="' + label + '">Guest</div>' +
-    '<div style="font-family:Georgia,serif;font-size:23px;padding-top:2px">' + html_(record.fullName) + '</div>' +
-    '</td></tr>' +
-    '<tr><td style="padding:14px 24px 18px">' +
+    '<tr><td style="padding:14px 22px 14px">' +
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>' +
-    '<td><div style="' + label + '">Meal</div><div style="font-size:16px;font-weight:bold;padding-top:2px">' + html_(record.mealSelected || '—') + '</div></td>' +
-    '<td align="right"><div style="' + label + '">Registration</div><div style="font-size:13px;font-family:Courier,monospace;padding-top:3px">' + html_(record.registrationId) + '</div></td>' +
+    '<td width="55%" align="left" style="vertical-align:top">' +
+    '<div style="' + label + '">Guest</div>' +
+    '<div style="font-family:Georgia,serif;font-size:19px;padding-top:2px">' + html_(record.fullName) + '</div></td>' +
+    '<td width="45%" align="right" style="vertical-align:top">' +
+    '<div style="' + label + '">Registration</div>' +
+    '<div style="font-size:12px;font-family:Courier,monospace;padding-top:5px;white-space:nowrap">' + html_(record.registrationId) + '</div></td>' +
     '</tr></table>' +
     '</td></tr>' +
-    (updatedNote ? '<tr><td>' + updatedNote + '</td></tr>' : '') +
-    '<tr><td align="center" style="border-top:2px dashed #ddd6c4;padding:20px 24px 4px">' +
-    '<img src="' + qrUrl + '" width="240" height="240" alt="Registration QR code" style="display:block;margin:0 auto;border:0">' +
-    '<div style="font-size:13px;color:#8a8272;padding-top:10px;line-height:1.5">Present this code at event check-in<br>and at meal pickup.</div>' +
-    '<div><a href="' + receiptUrl + '" style="display:inline-block;margin:16px 0 20px;background:#c9a227;color:#2e2400;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 24px;border-radius:99px">Open mobile pass</a></div>' +
+    updatedNote +
+    '<tr><td align="center" style="border-top:2px dashed #ddd6c4;padding:14px 22px 16px">' +
+    '<img src="' + qrUrl + '" width="180" height="180" alt="Registration QR code" style="display:block;margin:0 auto;border:0">' +
+    '<div style="font-size:12px;color:#8a8272;padding-top:8px">Present this code at check-in and meal pickup.</div>' +
+    walletButtons_(record, event) +
+    '<div style="padding-top:2px"><a href="' + receiptUrl + '" style="color:#8a5a00;font-size:12px">View this pass in your browser</a></div>' +
     '</td></tr>' +
     '</table>' +
-    '<div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#8a8272;padding-top:14px">&#10022; We look forward to seeing you.</div>' +
     '</td></tr></table></div>';
   MailApp.sendEmail({ to: record.email, subject: subject, htmlBody: html, name: 'RCCC Events',
     body: 'Registration confirmed for ' + event.name + '. Open your QR receipt: ' + receiptUrl });
