@@ -46,12 +46,15 @@ footer a{color:var(--goldsoft);text-decoration:none;font-weight:600}
 #pop .bar{position:absolute;left:0;bottom:0;height:5px;background:var(--gold);width:100%;transform-origin:left}
 #pop.run .bar{animation:shrink 3.5s linear forwards}
 @keyframes shrink{to{transform:scaleX(0)}}
-#manualOv{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;background:#12100bc9;padding:22px}
-#manualOv .box{background:#fff;border-radius:18px;max-width:420px;width:100%;padding:20px}
-#manualOv b{font-family:'Fraunces',Georgia,serif;font-size:19px}
-#manualOv input{width:100%;font-size:17px;padding:12px;border-radius:10px;border:1px solid #ddd6c4;margin-top:12px}
-#manualOv button{width:100%;font-size:16px;padding:12px;border-radius:10px;border:0;margin-top:10px;background:var(--green);color:#fff;font-weight:700}
-#manualOv button.gray{background:#6d675a}
+#manualOv,#phoneOv{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;background:#12100bc9;padding:22px}
+#manualOv .box,#phoneOv .box{background:#fff;border-radius:18px;max-width:420px;width:100%;padding:20px}
+#manualOv b,#phoneOv b{font-family:'Fraunces',Georgia,serif;font-size:19px}
+#manualOv input,#phoneOv input{width:100%;font-size:17px;padding:12px;border-radius:10px;border:1px solid #ddd6c4;margin-top:12px}
+#manualOv button,#phoneOv button{width:100%;font-size:16px;padding:12px;border-radius:10px;border:0;margin-top:10px;background:var(--green);color:#fff;font-weight:700}
+#manualOv button.gray,#phoneOv button.gray{background:#6d675a}
+#phoneRes{margin-top:4px}
+#phoneRes .match{display:block;width:100%;text-align:left;background:#f4efe2;color:var(--ink);font-weight:600;border:1px solid #ddd6c4}
+#phoneRes .none{color:var(--muted);font-size:14px;margin-top:10px}
 </style></head><body>
 <header>
  <div class="brand"><span class="spark">&#10022;</span><span class="t">RCCC Community Events</span></div>
@@ -59,7 +62,7 @@ footer a{color:var(--goldsoft);text-decoration:none;font-weight:600}
  <div class="ev" id="evname">&nbsp;</div>
 </header>
 <div id="stage"><div id="camhint">Starting camera&hellip;</div><div id="reader"></div></div>
-<footer><span>Point the camera at a guest's QR code</span><span><a href="#" onclick="openManual();return false">Enter code</a>&nbsp;&middot;&nbsp;<a href="#" onclick="signOut();return false">Sign out</a></span></footer>
+<footer><span><a href="#" onclick="openPhone();return false">Find by phone</a></span><span><a href="#" onclick="openManual();return false">Enter code</a>&nbsp;&middot;&nbsp;<a href="#" onclick="signOut();return false">Sign out</a></span></footer>
 
 <div class="screen" id="login">
  <div class="spark">&#10022;</div><div class="t">RCCC Community Events</div>
@@ -78,6 +81,13 @@ footer a{color:var(--goldsoft);text-decoration:none;font-weight:600}
  <div class="diet" id="pdiet"></div>
  <div class="small" id="psmall"></div>
  <div class="bar"></div>
+</div></div>
+
+<div id="phoneOv" class="ov"><div class="box"><b>Find a guest by phone</b>
+ <input id="phoneIn" type="tel" inputmode="numeric" placeholder="Last 4+ digits of their phone" onkeydown="if(event.key==='Enter')searchPhone()">
+ <button onclick="searchPhone()">Search</button>
+ <div id="phoneRes"></div>
+ <button class="gray" onclick="closePhone()">Cancel</button>
 </div></div>
 
 <div id="manualOv"><div class="box"><b>Enter code manually</b>
@@ -142,6 +152,16 @@ function onScan(text){const now=Date.now();
  if(text===lastToken&&now-lastAt<3500)return;
  lastToken=text;lastAt=now;
  process(text)}
+function openPhone(){document.getElementById('phoneOv').style.display='flex';document.getElementById('phoneIn').focus()}
+function closePhone(){document.getElementById('phoneOv').style.display='none';document.getElementById('phoneRes').innerHTML='';document.getElementById('phoneIn').value=''}
+function searchPhone(){const v=document.getElementById('phoneIn').value.trim();if(!v)return;
+ const res=document.getElementById('phoneRes');res.innerHTML='<div class="none">Searching…</div>';
+ api({fn:'phoneLookup',pin:getPin(),phone:v}).then(function(r){
+  if(!r||r.ok===false){res.innerHTML='<div class="none">'+esc((r&&r.message)||'Failed.')+'</div>';return}
+  if(!r.matches.length){res.innerHTML='<div class="none">No active registration matches that number.</div>';return}
+  res.innerHTML=r.matches.map(function(m){return '<button class="match" onclick="pickMatch(\''+esc(m.token)+'\')">'+esc(m.fullName)+' &nbsp;<span style="font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#8a8272">'+esc(m.registrationId)+'</span></button>'}).join('')})
+ .catch(function(e){res.innerHTML='<div class="none">Network error: '+esc(String(e))+'</div>'})}
+function pickMatch(t){closePhone();process(t)}
 function openManual(){document.getElementById('manualOv').style.display='flex';document.getElementById('manual').focus()}
 function closeManual(){document.getElementById('manualOv').style.display='none'}
 function submitManual(){const v=document.getElementById('manual').value.trim();if(!v)return;

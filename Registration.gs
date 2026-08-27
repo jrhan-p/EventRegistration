@@ -19,6 +19,32 @@ function handleFormSubmit(e) {
       smsConsent: Boolean(get('SMS Consent')), status: APP.statuses.ACTIVE
     };
     record.userId = findOrCreateUser_(record.email, record.fullName, record.phone, now);
+    // Self-service updates: a resubmission by the same signed-in user for the
+    // same attendee name overwrites the earlier registration in place — the
+    // guest keeps the same QR code, and a changed meal is no longer "ordered".
+    const existing = findExistingRegistration_(event, record.userId, record.fullName);
+    if (existing) {
+      const i = existing.index;
+      const prevMeal = cleanText_(existing.values[i.meal_selected]);
+      // phone / meal_selected / dietary_notes / sms_consent are adjacent
+      // columns in REG_HEADERS, written in one call.
+      existing.sheet.getRange(existing.rowNumber, i.phone + 1, 1, 4)
+        .setValues([[record.phone, record.mealSelected, record.dietaryNotes, record.smsConsent]]);
+      if (prevMeal !== record.mealSelected && bool_(existing.values[i.meal_ordered])) {
+        existing.sheet.getRange(existing.rowNumber, i.meal_ordered + 1).setValue(false);
+      }
+      existing.sheet.getRange(existing.rowNumber, i.updated_at + 1).setValue(now);
+      record.registrationId = cleanText_(existing.values[i.registration_id]);
+      record.token = cleanText_(existing.values[i.qr_token]);
+      record.updated = true;
+      try {
+        sendConfirmation_(record, event);
+      } catch (err) {
+        console.error('Update confirmation delivery failed for ' + record.registrationId + ': ' + err);
+      }
+      refreshFoodSummaryFor_(event);
+      return;
+    }
     eventDb_(event).getSheetByName(SHEETS.REGISTRATIONS).appendRow([
       record.createdAt, record.registrationId, record.token, record.eventId, record.fullName, record.email,
       record.phone, record.mealSelected, record.dietaryNotes, record.smsConsent, record.status,
@@ -85,6 +111,22 @@ function resendLatestConfirmation() {
   console.log('Confirmation resent for ' + newest.record.registrationId + ' to ' + newest.record.email);
 }
 
+function findExistingRegistration_(event, userId, fullName) {
+  const sheet = eventDb_(event).getSheetByName(SHEETS.REGISTRATIONS);
+  if (!sheet || sheet.getLastRow() < 2) return null;
+  const values = sheet.getDataRange().getValues();
+  const idx = headerIndex_(values[0]);
+  const wanted = cleanText_(fullName).toLowerCase();
+  for (let r = values.length - 1; r >= 1; r--) {
+    if (values[r][idx.status] !== APP.statuses.ACTIVE) continue;
+    if (cleanText_(values[r][idx.user_id]) === userId &&
+        cleanText_(values[r][idx.full_name]).toLowerCase() === wanted) {
+      return { sheet: sheet, values: values[r], index: idx, rowNumber: r + 1 };
+    }
+  }
+  return null;
+}
+
 // Strictly deterministic: one verified Google email maps to exactly one user_id.
 // No matching by phone or name — ambiguous cases stay separate users on purpose.
 function findOrCreateUser_(email, name, phone, now) {
@@ -109,7 +151,10 @@ function sendConfirmation_(record, event) {
   const receiptUrl = webAppUrl + '?view=receipt&event=' + encodeURIComponent(event.eventId) + '&token=' + encodeURIComponent(record.token);
   const qrValue = APP.qrPrefix + record.token;
   const qrUrl = 'https://quickchart.io/qr?size=260&text=' + encodeURIComponent(qrValue);
-  const subject = 'Registration confirmed: ' + event.name;
+  const subject = (record.updated ? 'Registration updated: ' : 'Registration confirmed: ') + event.name;
+  const updatedNote = record.updated
+    ? '<div style="font-size:13px;color:#1a7f4e;padding:0 24px 12px;font-family:Arial,Helvetica,sans-serif">Your registration was updated &mdash; the same QR code still works.</div>'
+    : '';
   const label = 'font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#8a8272';
   const html =
     '<div style="background:#faf6ec;padding:26px 0">' +
@@ -130,6 +175,7 @@ function sendConfirmation_(record, event) {
     '<td align="right"><div style="' + label + '">Registration</div><div style="font-size:13px;font-family:Courier,monospace;padding-top:3px">' + html_(record.registrationId) + '</div></td>' +
     '</tr></table>' +
     '</td></tr>' +
+    (updatedNote ? '<tr><td>' + updatedNote + '</td></tr>' : '') +
     '<tr><td align="center" style="border-top:2px dashed #ddd6c4;padding:20px 24px 4px">' +
     '<img src="' + qrUrl + '" width="240" height="240" alt="Registration QR code" style="display:block;margin:0 auto;border:0">' +
     '<div style="font-size:13px;color:#8a8272;padding-top:10px;line-height:1.5">Present this code at event check-in<br>and at meal pickup.</div>' +

@@ -194,7 +194,7 @@ function provisionEvent_(eventsSheet, idx, rowNumber, row) {
   ensureSheet_(ss, SHEETS.MEALS, ['meal_name', 'active'], meals.map(function(m) { return [m, true]; }));
   ensureSheet_(ss, SHEETS.REGISTRATIONS, REG_HEADERS);
   ensureSheet_(ss, SHEETS.SCAN_LOG, LOG_HEADERS);
-  ensureSheet_(ss, SHEETS.FOOD_SUMMARY, ['meal_name', 'requested', 'marked_ordered', 'redeemed']);
+  ensureSheet_(ss, SHEETS.FOOD_SUMMARY, ['meal_name', 'requested', 'marked_ordered', 'redeemed', 'remaining']);
   const takenPins = allStationPins_();
   ensureSheet_(ss, SHEETS.STATIONS, STATION_HEADERS, [
     ['MAIN', 'Main check-in', 'checkin', genStationPin_(takenPins), true],

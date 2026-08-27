@@ -35,6 +35,7 @@ function doPost(e) {
     const p = (e && e.parameter) || {};
     const fn = cleanText_(p.fn);
     if (fn === 'scan') return out(processScan(p.value, p.pin));
+    if (fn === 'phoneLookup') return out(phoneLookup(p.pin, p.phone));
     if (fn === 'resolvePin') {
       const station = resolvePin_(p.pin);
       return out(station ? {
