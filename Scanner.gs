@@ -58,14 +58,21 @@ function stationCheckin_(event, stationId, registrationId) {
   return '';
 }
 
+// Reads only the token column, then the single matching row — the whole-sheet
+// read was the scan path's biggest payload.
 function findRegistration_(token, event) {
   const sheet = eventDb_(event).getSheetByName(SHEETS.REGISTRATIONS);
   if (!sheet) return null;
-  const values = sheet.getDataRange().getValues();
-  if (values.length < 2) return null;
-  const index = headerIndex_(values[0]);
-  for (let r = 1; r < values.length; r++) {
-    if (cleanText_(values[r][index.qr_token]) === token) return { sheet: sheet, values: values[r], index: index, rowNumber: r + 1 };
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  if (lastRow < 2) return null;
+  const index = headerIndex_(sheet.getRange(1, 1, 1, lastCol).getValues()[0]);
+  const tokens = sheet.getRange(2, index.qr_token + 1, lastRow - 1, 1).getValues();
+  for (let r = 0; r < tokens.length; r++) {
+    if (cleanText_(tokens[r][0]) === token) {
+      const rowNumber = r + 2;
+      return { sheet: sheet, values: sheet.getRange(rowNumber, 1, 1, lastCol).getValues()[0], index: index, rowNumber: rowNumber };
+    }
   }
   return null;
 }

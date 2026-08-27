@@ -74,17 +74,30 @@ function ensureStations_(event) {
 }
 
 // The PIN alone identifies the station. Only ACTIVE events participate, so
-// closing an event retires its PINs.
+// closing an event retires its PINs. The full lookup opens every active
+// event's spreadsheet, so resolved stations are cached for five minutes —
+// scans hit the cache and skip all of that. (A closed event's PINs can
+// therefore linger for up to five minutes.)
 function resolvePin_(pin) {
   const clean = cleanText_(pin);
   if (!clean) return null;
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get('pin:' + clean);
+  if (cached) {
+    try {
+      const station = JSON.parse(cached);
+      if (station && station.event && station.event.spreadsheetId) return station;
+    } catch (err) {}
+  }
   const events = allEvents_();
   for (let i = 0; i < events.length; i++) {
     if (events[i].status !== 'ACTIVE') continue;
     const stations = eventStations_(events[i]);
     for (let s = 0; s < stations.length; s++) {
       if (stations[s].pin && stations[s].pin === clean) {
-        return { event: events[i], stationId: stations[s].id, stationName: stations[s].name, type: stations[s].type };
+        const station = { event: events[i], stationId: stations[s].id, stationName: stations[s].name, type: stations[s].type };
+        cache.put('pin:' + clean, JSON.stringify(station), 300);
+        return station;
       }
     }
   }

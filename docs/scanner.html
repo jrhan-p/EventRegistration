@@ -34,7 +34,7 @@ footer a{color:var(--goldsoft);text-decoration:none;font-weight:600}
 .err{color:var(--bad);font-size:14px;margin-top:12px;min-height:18px}
 #pop{position:fixed;inset:0;z-index:40;display:none;align-items:center;justify-content:center;padding:22px;background:#12100bc9}
 #pop .box{background:#fff;border-radius:22px;max-width:420px;width:100%;padding:28px 22px 22px;text-align:center;position:relative;overflow:hidden}
-#pop .icon{width:76px;height:76px;border-radius:50%;margin:0 auto 12px;display:flex;align-items:center;justify-content:center;font-size:42px;color:#fff;font-weight:700}
+#pop .icon{width:76px;height:76px;border-radius:50%;margin:0 auto 12px;display:flex;align-items:center;justify-content:center;font-size:42px;color:#fff;font-weight:700;background:#8a8272}
 #pop.ok .icon{background:var(--ok)}#pop.bad .icon{background:var(--bad)}
 #pop .msg{font-weight:700;font-size:19px}
 #pop.ok .msg{color:var(--ok)}#pop.bad .msg{color:var(--bad)}
@@ -145,9 +145,19 @@ function openManual(){document.getElementById('manualOv').style.display='flex';d
 function closeManual(){document.getElementById('manualOv').style.display='none'}
 function submitManual(){const v=document.getElementById('manual').value.trim();if(!v)return;
  document.getElementById('manual').value='';closeManual();process(v)}
+function showChecking(){const pop=document.getElementById('pop');
+ pop.className='';pop.style.display='flex';
+ document.getElementById('picon').innerHTML='&#8987;';
+ document.getElementById('pmsg').textContent='Checking…';
+ document.getElementById('pwho').textContent='';
+ document.getElementById('pmeal').textContent='';
+ document.getElementById('pdiet').style.display='none';
+ document.getElementById('psmall').textContent='';
+ clearTimeout(popTimer)}
 function process(value){frozen=true;try{if(qr)qr.pause(true)}catch(e){}
+ showChecking();
  api({fn:'scan',value:value,pin:getPin()})
- .then(function(r){if(r&&r.code==='UNAUTHORIZED'){clearPin();resume();showLogin('PIN no longer valid — sign in again.');return}showPop(r)})
+ .then(function(r){if(r&&r.code==='UNAUTHORIZED'){clearPin();closePop();showLogin('PIN no longer valid — sign in again.');return}showPop(r)})
  .catch(function(e){showPop({ok:false,message:'Network error: '+e})})}
 function fmtTime(v){try{const d=new Date(v);if(!isNaN(d))return d.toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}catch(e){}return String(v)}
 function showPop(r){const pop=document.getElementById('pop');
