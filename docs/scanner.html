@@ -20,6 +20,7 @@ body{font-family:-apple-system,'Segoe UI',Arial,sans-serif;background:var(--crea
 input,button{width:100%;font-size:17px;padding:13px;border-radius:11px;margin-top:10px;border:1px solid #ddd6c4;background:#fff}
 input:focus{outline:2px solid var(--gold);border-color:var(--gold)}
 button{border:0;background:var(--green);color:#fff;font-weight:700;cursor:pointer}
+button.alt{background:var(--gold);color:#2e2400}
 .hint{color:var(--muted);font-size:13px;margin-top:12px;line-height:1.55}
 .warn{background:#fdf3e0;border:1px solid #ecd9a8;color:#6b5417;padding:11px 13px;border-radius:11px;font-size:14px;margin-top:10px;line-height:1.5;display:none}
 #reader{margin-top:12px;border-radius:12px;overflow:hidden}
@@ -43,9 +44,13 @@ button{border:0;background:var(--green);color:#fff;font-weight:700;cursor:pointe
   <input id="pin" inputmode="numeric" type="password" placeholder="Operator PIN" autocomplete="off">
   <div id="envwarn" class="warn"></div>
   <div id="reader"></div>
+  <button class="alt" onclick="document.getElementById('photoIn').click()">&#128247;&nbsp; Take a photo of the code</button>
+  <input id="photoIn" type="file" accept="image/*" capture="environment" style="display:none" onchange="photoScan(this.files)">
+  <div id="filereader" style="display:none"></div>
   <input id="manual" placeholder="QR value or registration token">
   <button onclick="submitManual()">Process code</button>
-  <div class="hint">Camera not opening? In-app browsers (WeChat, Messenger&hellip;) block cameras &mdash; tap <b>&middot;&middot;&middot; &rarr; Open in Browser</b> to use Safari or Chrome. You can also use &ldquo;Scan an Image File&rdquo; above with a photo of the code, or type the registration ID by hand.</div>
+  <div class="hint">Live camera not opening? Use <b>Take a photo of the code</b> above &mdash; it uses the phone's own camera app and always works. In-app browsers (WeChat, Messenger&hellip;) block live cameras; tap <b>&middot;&middot;&middot; &rarr; Open in Browser</b> for Safari or Chrome. On iPhone also check Settings &rarr; Safari &rarr; Camera = Ask/Allow. <a href="#" onclick="camDiag();return false">Camera self-test</a></div>
+  <pre id="diag" style="display:none;background:#f2ede0;border-radius:9px;padding:10px;font-size:11px;white-space:pre-wrap;word-break:break-all;margin-top:10px"></pre>
  </div>
  <div id="output"></div>
 </div>
@@ -70,6 +75,21 @@ function boot(){
  const scanner=new Html5QrcodeScanner('reader',{fps:8,qrbox:{width:240,height:240}},false);scanner.render(onScan,()=>{});}
 function onScan(value){if(busy)return;process(value)}
 function submitManual(){process(document.getElementById('manual').value)}
+let fileScanner=null;
+function photoScan(files){if(!files||!files.length)return;
+ if(!fileScanner)fileScanner=new Html5Qrcode('filereader');
+ fileScanner.scanFile(files[0],false).then(function(t){process(t)})
+  .catch(function(){show({ok:false,message:'Could not read a QR code from that photo. Try again — closer, steady, and well lit.'})});
+ document.getElementById('photoIn').value=''}
+async function camDiag(){const L=[];
+ L.push('host: '+location.host);
+ L.push('framed: '+(window.top!==window));
+ L.push('mediaDevices: '+!!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia));
+ try{const p=await navigator.permissions.query({name:'camera'});L.push('permission: '+p.state)}catch(e){L.push('permission: n/a')}
+ try{const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});L.push('getUserMedia: OK');s.getTracks().forEach(t=>t.stop())}
+ catch(e){L.push('getUserMedia: '+e.name+' — '+e.message)}
+ L.push('ua: '+navigator.userAgent.slice(0,110));
+ const d=document.getElementById('diag');d.style.display='block';d.textContent=L.join('\n')}
 function process(value){const pin=document.getElementById('pin').value;if(!pin){show({ok:false,message:'Enter the operator PIN first.'});return}
  busy=true;fetch(API,{method:'POST',body:new URLSearchParams({fn:'scan',value:value,pin:pin,mode:MODE,event:EVENT})})
   .then(r=>r.json()).then(r=>{busy=false;show(r)})
