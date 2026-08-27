@@ -7,14 +7,14 @@ function doGet(e) {
     admin.webAppUrl = setting_('WEB_APP_URL');
     return page_(admin.evaluate().setTitle('Event admin'));
   }
-  const event = eventById_(e.parameter.event);
-  if (!event) return renderEventIndex_();
-  const template = HtmlService.createTemplateFromFile('ScannerPage');
-  template.mode = e.parameter.mode === APP.modes.MEAL ? APP.modes.MEAL : APP.modes.CHECKIN;
-  template.eventName = event.name;
-  template.eventId = event.eventId;
-  template.webAppUrl = setting_('WEB_APP_URL');
-  return page_(template.evaluate().setTitle('Event scanner'));
+  // The scanner itself lives on GitHub Pages (top-level, so cameras work);
+  // any old scanner URL pointing here forwards people to it.
+  return page_(HtmlService.createHtmlOutput(
+    '<div style="font-family:Arial,sans-serif;max-width:520px;margin:60px auto;padding:0 18px;text-align:center">' +
+    '<h2>The event scanner has moved</h2>' +
+    '<p><a href="' + SCANNER_BASE + '" style="font-size:18px">Open the event scanner</a></p>' +
+    '<p style="color:#667085">Sign in there with your station PIN.</p></div>'
+  ).setTitle('Event scanner'));
 }
 
 // Google's wrapper page only carries a mobile viewport tag when it is added
@@ -34,19 +34,20 @@ function doPost(e) {
   try {
     const p = (e && e.parameter) || {};
     const fn = cleanText_(p.fn);
-    if (fn === 'scan') return out(processScan(p.value, p.pin, p.mode, p.event, p.meeting));
-    if (fn === 'verifyPin') {
-      const mode = p.mode === APP.modes.MEAL ? APP.modes.MEAL : APP.modes.CHECKIN;
-      return out(authorizePin_(p.pin, mode) ? { ok: true } : { ok: false, message: 'Operator PIN is incorrect.' });
+    if (fn === 'scan') return out(processScan(p.value, p.pin));
+    if (fn === 'resolvePin') {
+      const station = resolvePin_(p.pin);
+      return out(station ? {
+        ok: true, type: station.type, stationName: station.stationName,
+        eventId: station.event.eventId, eventName: station.event.name
+      } : { ok: false, message: 'Operator PIN is incorrect.' });
     }
     if (fn === 'eventInfo') {
       const info = eventById_(p.event);
-      return out(info ? {
-        ok: true, name: info.name, date: info.date, location: info.location, status: info.status,
-        meetingName: meetingName_(info, p.meeting)
-      } : { ok: false, message: 'Unknown event.' });
+      return out(info ? { ok: true, name: info.name, date: info.date, location: info.location, status: info.status }
+        : { ok: false, message: 'Unknown event.' });
     }
-    if (fn === 'addMeeting') return out(Object.assign({ ok: true }, adminAddMeeting(p.pin, p.event, p.name)));
+    if (fn === 'addStation') return out(Object.assign({ ok: true }, adminAddStation(p.pin, p.event, p.name)));
     if (fn === 'listEvents') return out(Object.assign({ ok: true }, adminListEvents(p.pin)));
     if (fn === 'createEvent') return out(Object.assign({ ok: true }, adminCreateEvent(p.pin, p.name, p.date, p.location)));
     if (fn === 'eventAction') return out(Object.assign({ ok: true }, adminEventAction(p.pin, p.event, p.action)));
@@ -67,18 +68,6 @@ function syncWebAppUrl_() {
   } catch (err) {
     console.warn('WEB_APP_URL sync skipped: ' + err);
   }
-}
-
-function renderEventIndex_() {
-  const items = allEvents_().filter(function(event) { return event.status === 'ACTIVE'; })
-    .map(function(event) {
-      return '<li style="margin-bottom:10px"><b>' + html_(event.name) + '</b><br>' +
-        '<a href="' + scannerUrl_(event.eventId, APP.modes.CHECKIN) + '">Check-in scanner</a> · ' +
-        '<a href="' + scannerUrl_(event.eventId, APP.modes.MEAL) + '">Meal pickup scanner</a></li>';
-    }).join('');
-  const body = '<div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;padding:18px">' +
-    '<h2>Active events</h2><ul>' + (items || '<li>No active events.</li>') + '</ul></div>';
-  return page_(HtmlService.createHtmlOutput(body).setTitle('Event scanner'));
 }
 
 function renderReceipt_(token, eventId) {

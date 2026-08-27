@@ -20,6 +20,13 @@ function adminListEvents(pin) {
       const eventId = cleanText_(row[idx.event_id]);
       if (!eventId) continue;
       const lite = { eventId: eventId, spreadsheetId: cleanText_(row[idx.spreadsheet_id]) };
+      let stations = [];
+      try {
+        ensureStations_(lite);
+        stations = eventStations_(lite).map(function(s) {
+          return { id: s.id, name: s.name, type: s.type, pin: s.pin };
+        });
+      } catch (err) {}
       events.push({
         eventId: eventId,
         name: cleanText_(row[idx.event_name]),
@@ -27,16 +34,13 @@ function adminListEvents(pin) {
         location: cleanText_(row[idx.location]),
         status: cleanText_(row[idx.status]).toUpperCase(),
         registrationUrl: cleanText_(row[idx.registration_url]),
-        mealScannerUrl: scannerUrl_(eventId, APP.modes.MEAL),
         spreadsheetUrl: cleanText_(row[idx.spreadsheet_url]),
         formEditUrl: cleanText_(row[idx.form_edit_url]),
-        meetings: eventMeetings_(lite).map(function(m) {
-          return { id: m.id, name: m.name, url: scannerUrl_(eventId, APP.modes.CHECKIN, m.id) };
-        })
+        stations: stations
       });
     }
   }
-  return { masterUrl: db_().getUrl(), events: events };
+  return { masterUrl: db_().getUrl(), scannerUrl: SCANNER_BASE, events: events };
 }
 
 function adminCreateEvent(pin, name, date, location) {
@@ -84,15 +88,15 @@ function adminEventAction(pin, eventId, action) {
   return adminListEvents(pin);
 }
 
-function adminAddMeeting(pin, eventId, name) {
+function adminAddStation(pin, eventId, name) {
   requireAdmin_(pin);
   const event = eventById_(eventId);
   if (!event) throw new Error('Unknown event.');
   const clean = cleanText_(name);
-  if (!clean) throw new Error('Enter a meeting name.');
-  const sheet = ensureSheet_(eventDb_(event), SHEETS.MEETINGS, MEETING_HEADERS, [['MAIN', 'Main check-in', true]]);
-  const meetingId = 'M-' + Utilities.getUuid().replace(/-/g, '').slice(0, 4).toUpperCase();
-  sheet.appendRow([meetingId, clean, true]);
+  if (!clean) throw new Error('Enter a station name.');
+  const sheet = ensureStations_(event);
+  const stationId = 'S-' + Utilities.getUuid().replace(/-/g, '').slice(0, 4).toUpperCase();
+  sheet.appendRow([stationId, clean, 'checkin', genStationPin_(allStationPins_()), true]);
   return adminListEvents(pin);
 }
 

@@ -17,7 +17,7 @@ Registration requires signing in with a Google account. Google attaches the veri
 3. Customize the event's `Meals` sheet if needed, then run `syncAllMealChoices()`; or edit the form directly.
 4. Share the registration URL. Attendees sign in with Google, register, and receive a QR receipt by email (and SMS when Twilio is configured).
 5. Review the event's **Food Summary**, place the food order, then type `finalize` in the event's `action` column and run `applyEventChanges()`.
-6. Volunteers open the scanner links (check-in and meal modes have separate PINs). Meal pickup succeeds only when a meal was selected, marked ordered, and not yet redeemed.
+6. Every volunteer opens the same universal scanner page and signs in with their station PIN. The PIN alone routes them: each event's stations (main check-in, extra sessions, meal pickup) carry auto-generated PINs, shown in the admin console and editable in the event's Stations sheet. Closing an event disables its PINs. Meal pickup succeeds only when a meal was selected, marked ordered, and not yet redeemed; check-in stations never see meal choices.
 7. To stop registrations, type `close` in the `action` column and run `applyEventChanges()` (`reopen` reverses it). To discard an event entirely, delete its spreadsheet and form in Drive and its row in Events.
 
 `cleanupLegacyData()` removes the tabs, test users, and form left over from the original single-event deployment.
@@ -26,7 +26,7 @@ Registration requires signing in with a Google account. Google attaches the veri
 
 1. Create a standalone Apps Script project (or use `clasp` with this folder) and push every `.gs` and `.html` file plus `appsscript.json`.
 2. Run `setupApplication()` and approve permissions.
-3. Run `setOperatorPins('...', '...')` with two private 4–10 digit PINs.
+3. Run `setAdminPin('...')` with a private 4–10 digit admin PIN (station PINs generate themselves per event).
 4. Deploy as **Web app** (execute as you; access: anyone) **from the editor UI** — see the warning below. Visit the `/exec` URL once; the `WEB_APP_URL` setting self-heals to match it.
 5. Add the first event row and run `applyEventChanges()`.
 6. Optional SMS: run `setTwilioCredentials(accountSid, authToken, fromNumber)`.

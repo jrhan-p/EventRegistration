@@ -1,23 +1,24 @@
-function processScan(scanValue, pin, mode, eventId, meetingId) {
+// The PIN alone routes the scan: it identifies the event, the station, and
+// whether this is a check-in desk or the meal window.
+function processScan(scanValue, pin) {
   const token = extractToken_(scanValue);
-  const validMode = mode === APP.modes.CHECKIN || mode === APP.modes.MEAL;
-  if (!validMode || !authorizePin_(pin, mode)) return { ok: false, code: 'UNAUTHORIZED', message: 'Operator PIN is incorrect.' };
-  const event = eventById_(eventId);
-  if (!event) return { ok: false, code: 'NO_EVENT', message: 'Unknown event. Reopen the scanner from its link in the admin console.' };
-  const meeting = mode === APP.modes.CHECKIN ? (cleanText_(meetingId) || 'MAIN') : '';
+  const station = resolvePin_(pin);
+  if (!station) return { ok: false, code: 'UNAUTHORIZED', message: 'Operator PIN is incorrect.' };
+  const event = station.event;
+  const mode = station.type === 'meal' ? APP.modes.MEAL : APP.modes.CHECKIN;
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
     const found = findRegistration_(token, event);
     const record = found && rowToRecord_(found.values, found.index);
-    // Check-in duplicates are per meeting: swap in this meeting's prior time
+    // Check-in duplicates are per station: swap in this station's prior time
     // so evaluateScan_ judges the right scope.
-    if (record && mode === APP.modes.CHECKIN) record.checkedInAt = meetingCheckin_(event, meeting, record.registrationId);
+    if (record && mode === APP.modes.CHECKIN) record.checkedInAt = stationCheckin_(event, station.stationId, record.registrationId);
     const decision = evaluateScan_(record, mode);
     const now = new Date();
     if (decision.ok) {
       if (mode === APP.modes.CHECKIN) {
-        checkinsSheet_(event).appendRow([now, meeting, record.registrationId, Session.getActiveUser().getEmail() || 'PIN operator']);
+        checkinsSheet_(event).appendRow([now, station.stationId, record.registrationId, Session.getActiveUser().getEmail() || 'PIN operator']);
         if (!found.values[found.index.checked_in_at]) found.sheet.getRange(found.rowNumber, found.index.checked_in_at + 1).setValue(now);
       } else {
         found.sheet.getRange(found.rowNumber, found.index.meal_redeemed_at + 1).setValue(now);
@@ -25,7 +26,7 @@ function processScan(scanValue, pin, mode, eventId, meetingId) {
       }
       found.sheet.getRange(found.rowNumber, found.index.updated_at + 1).setValue(now);
     }
-    logScan_(event, record, meeting ? mode + '@' + meeting : mode, decision, now);
+    logScan_(event, record, mode + '@' + station.stationId, decision, now);
     // The check-in desk must not see meal choices; only the kitchen scanner may.
     const extra = record ? {
       registrationId: record.registrationId, fullName: record.fullName, timestamp: now.toISOString()
@@ -44,12 +45,12 @@ function checkinsSheet_(event) {
   return ensureSheet_(eventDb_(event), SHEETS.CHECKINS, CHECKIN_HEADERS);
 }
 
-function meetingCheckin_(event, meetingId, registrationId) {
+function stationCheckin_(event, stationId, registrationId) {
   const values = checkinsSheet_(event).getDataRange().getValues();
   if (values.length < 2) return '';
   const idx = headerIndex_(values[0]);
   for (let r = 1; r < values.length; r++) {
-    if (cleanText_(values[r][idx.meeting_id]) === meetingId &&
+    if (cleanText_(values[r][idx.station_id]) === stationId &&
         cleanText_(values[r][idx.registration_id]) === registrationId) {
       return values[r][idx.timestamp];
     }
@@ -76,12 +77,6 @@ function rowToRecord_(row, i) {
     dietaryNotes: cleanText_(row[i.dietary_notes]), mealOrdered: bool_(row[i.meal_ordered]),
     checkedInAt: row[i.checked_in_at] || '', mealRedeemedAt: row[i.meal_redeemed_at] || ''
   };
-}
-
-function authorizePin_(pin, mode) {
-  const key = mode === APP.modes.CHECKIN ? 'CHECKIN_PIN_HASH' : 'MEAL_PIN_HASH';
-  const expected = PropertiesService.getScriptProperties().getProperty(key);
-  return Boolean(expected) && hash_(String(pin)) === expected;
 }
 
 function logScan_(event, record, mode, decision, timestamp) {

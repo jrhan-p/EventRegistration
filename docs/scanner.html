@@ -54,7 +54,7 @@ footer a{color:var(--goldsoft);text-decoration:none;font-weight:600}
 </style></head><body>
 <header>
  <div class="brand"><span class="spark">&#10022;</span><span class="t">RCCC Community Events</span></div>
- <div class="hrow"><h1 id="title">Check-in</h1><span class="chip" id="chip">Front desk</span></div>
+ <div class="hrow"><h1 id="title">Scanner</h1><span class="chip" id="chip">Station</span></div>
  <div class="ev" id="evname">&nbsp;</div>
 </header>
 <div id="stage"><div id="camhint">Starting camera&hellip;</div><div id="reader"></div></div>
@@ -63,7 +63,7 @@ footer a{color:var(--goldsoft);text-decoration:none;font-weight:600}
 <div class="screen" id="login">
  <div class="spark">&#10022;</div><div class="t">RCCC Community Events</div>
  <h2 id="ltitle">Operator sign-in</h2>
- <div class="sub" id="lsub">&nbsp;</div>
+ <div class="sub" id="lsub">Enter your station PIN &mdash; it knows which desk you are.</div>
  <input id="pin" inputmode="numeric" type="password" placeholder="PIN" autocomplete="off" onkeydown="if(event.key==='Enter')login()">
  <button onclick="login()">Unlock</button>
  <div class="err" id="lerr"></div>
@@ -86,38 +86,41 @@ footer a{color:var(--goldsoft);text-decoration:none;font-weight:600}
 </div></div>
 
 <script>
+// One universal page for every operator: the station PIN alone decides which
+// event, which session, and whether this is a check-in desk or meal pickup.
 const q=new URLSearchParams(location.search);
-const MODE=q.get('mode')==='meal'?'meal':'checkin';
-const MEETING=(q.get('meeting')||'MAIN').trim();
-const EVENT=(q.get('event')||'').trim();
 const API=q.get('api')||'https://script.google.com/macros/s/AKfycbytJhW6z4YiRgiGV6YnuZ9uOoJBhl9eRiaDmYd1c07PAjC053i1gneCyOOX68Cg5MKFUQ/exec';
-const PINKEY='rccc-pin-'+MODE;
-let qr=null,frozen=false,popTimer=null,lastToken='',lastAt=0,pinMem='';
+const PINKEY='rccc-station-pin';
+let qr=null,frozen=false,popTimer=null,lastToken='',lastAt=0,pinMem='',STATION=null;
 
 function api(params){return fetch(API,{method:'POST',body:new URLSearchParams(params)}).then(function(r){return r.json()})}
 function getPin(){try{return localStorage.getItem(PINKEY)||pinMem}catch(e){return pinMem}}
 function setPin(v){pinMem=v;try{localStorage.setItem(PINKEY,v)}catch(e){}}
 function clearPin(){pinMem='';try{localStorage.removeItem(PINKEY)}catch(e){}}
 function hint(t){const h=document.getElementById('camhint');h.style.display='flex';h.textContent=t}
+function isMeal(){return STATION&&STATION.type==='meal'}
+
+function applyStation(r){STATION=r;
+ document.getElementById('title').textContent=isMeal()?'Meal pickup':'Check-in';
+ const chip=document.getElementById('chip');
+ chip.textContent=isMeal()?'Kitchen':'Front desk';
+ chip.classList.toggle('meal',isMeal());
+ let line=r.eventName||'';
+ if(!isMeal()&&r.stationName&&r.stationName!=='Main check-in')line=r.stationName+' · '+line;
+ document.getElementById('evname').textContent=line}
 
 function boot(){
- document.getElementById('title').textContent=MODE==='meal'?'Meal pickup':'Check-in';
- const chip=document.getElementById('chip');chip.textContent=MODE==='meal'?'Kitchen':'Front desk';
- if(MODE==='meal')chip.classList.add('meal');
- if(!EVENT){hint('This link is missing its event. Open the scanner from its link in the admin console.');return}
- api({fn:'eventInfo',event:EVENT,meeting:MEETING}).then(function(r){if(r&&r.ok){
-  let line=r.name;
-  if(MODE==='checkin'&&r.meetingName&&r.meetingName!=='Main check-in')line=r.meetingName+' · '+r.name;
-  document.getElementById('evname').textContent=line;
-  document.getElementById('lsub').textContent=line;
- }}).catch(function(){});
- if(getPin()){startScanning()}else{showLogin()}
-}
+ const saved=getPin();
+ if(!saved){showLogin();return}
+ api({fn:'resolvePin',pin:saved}).then(function(r){
+  if(r&&r.ok){applyStation(r);startScanning()}
+  else{clearPin();showLogin()}})
+ .catch(function(){hint('Network error — reload to retry.');showLogin('Network error — try again.')})}
 function showLogin(msg){document.getElementById('login').style.display='flex';document.getElementById('lerr').textContent=msg||''}
 function login(){const p=document.getElementById('pin').value.trim();if(!p)return;
  document.getElementById('lerr').textContent='';
- api({fn:'verifyPin',pin:p,mode:MODE}).then(function(r){
-  if(r&&r.ok){setPin(p);document.getElementById('login').style.display='none';startScanning()}
+ api({fn:'resolvePin',pin:p}).then(function(r){
+  if(r&&r.ok){setPin(p);applyStation(r);document.getElementById('login').style.display='none';startScanning()}
   else document.getElementById('lerr').textContent=(r&&r.message)||'Incorrect PIN.'})
  .catch(function(e){document.getElementById('lerr').textContent='Network error: '+e})}
 function signOut(){clearPin();location.reload()}
@@ -143,7 +146,7 @@ function closeManual(){document.getElementById('manualOv').style.display='none'}
 function submitManual(){const v=document.getElementById('manual').value.trim();if(!v)return;
  document.getElementById('manual').value='';closeManual();process(v)}
 function process(value){frozen=true;try{if(qr)qr.pause(true)}catch(e){}
- api({fn:'scan',value:value,pin:getPin(),mode:MODE,event:EVENT,meeting:MEETING})
+ api({fn:'scan',value:value,pin:getPin()})
  .then(function(r){if(r&&r.code==='UNAUTHORIZED'){clearPin();resume();showLogin('PIN no longer valid — sign in again.');return}showPop(r)})
  .catch(function(e){showPop({ok:false,message:'Network error: '+e})})}
 function fmtTime(v){try{const d=new Date(v);if(!isNaN(d))return d.toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}catch(e){}return String(v)}
@@ -152,9 +155,9 @@ function showPop(r){const pop=document.getElementById('pop');
  document.getElementById('picon').innerHTML=r.ok?'&#10003;':'&#10005;';
  document.getElementById('pmsg').textContent=r.message||'Unknown result';
  document.getElementById('pwho').textContent=r.fullName||'';
- document.getElementById('pmeal').textContent=(MODE==='meal'&&r.mealSelected)?r.mealSelected:'';
+ document.getElementById('pmeal').textContent=(isMeal()&&r.mealSelected)?r.mealSelected:'';
  const diet=document.getElementById('pdiet');
- if(MODE==='meal'&&r.dietaryNotes){diet.style.display='block';diet.textContent='Dietary note: '+r.dietaryNotes}else{diet.style.display='none'}
+ if(isMeal()&&r.dietaryNotes){diet.style.display='block';diet.textContent='Dietary note: '+r.dietaryNotes}else{diet.style.display='none'}
  document.getElementById('psmall').textContent=[r.registrationId||'',r.priorAt?('previously: '+fmtTime(r.priorAt)):''].filter(Boolean).join(' · ');
  void pop.offsetWidth;pop.classList.add('run');
  clearTimeout(popTimer);popTimer=setTimeout(closePop,3500)}

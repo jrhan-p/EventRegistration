@@ -72,18 +72,25 @@ function cleanup(){if(confirm('Remove the legacy test data? This cannot be undon
 function esc(s){return String(s||'').replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
 function render(r){document.getElementById('create').style.display='block';document.getElementById('tools').style.display='block';
  const list=document.getElementById('list');
- if(!r.events.length){list.innerHTML='<div class="card muted">No events yet. Create the first one above.</div>';return}
- list.innerHTML=r.events.map(function(ev){
-  const links=[['Registration form',ev.registrationUrl],['Meal scanner',ev.mealScannerUrl],['Spreadsheet',ev.spreadsheetUrl],['Edit form',ev.formEditUrl]]
+ const scannerCard=r.scannerUrl?'<div class="card"><h2>Scanner link — one for everyone</h2>'+
+  '<div class="muted">Give every operator this same link. Their station PIN decides what it becomes: check-in desk, a specific session, or meal pickup. Closing an event disables its PINs.</div>'+
+  '<div class="links" style="margin-top:10px"><a href="'+esc(r.scannerUrl)+'" target="_blank">'+esc(r.scannerUrl)+'</a></div></div>':'';
+ if(!r.events.length){list.innerHTML=scannerCard+'<div class="card muted">No events yet. Create the first one above.</div>';return}
+ list.innerHTML=scannerCard+r.events.map(function(ev){
+  const links=[['Registration form',ev.registrationUrl],['Spreadsheet',ev.spreadsheetUrl],['Edit form',ev.formEditUrl]]
    .filter(function(l){return l[1]}).map(function(l){return '<a href="'+esc(l[1])+'" target="_blank">'+esc(l[0])+'</a>'}).join('');
-  const meets=(ev.meetings||[]).map(function(m){return '<a href="'+esc(m.url)+'" target="_blank">'+esc(m.name)+'</a>'}).join(' · ');
+  const stations=(ev.stations||[]).map(function(s){
+   return '<tr><td style="padding:4px 14px 4px 0">'+esc(s.name)+'</td>'+
+    '<td style="padding:4px 14px 4px 0;color:#8a8272">'+(s.type==='meal'?'Meal pickup':'Check-in')+'</td>'+
+    '<td style="padding:4px 0;font-family:ui-monospace,Menlo,monospace;font-weight:700;letter-spacing:2px">'+esc(s.pin||'—')+'</td></tr>'}).join('');
   const buttons=(ev.status==='ACTIVE'
    ? '<button onclick="act(\''+esc(ev.eventId)+'\',\'finalize\')">Finalize meal order</button><button class="gray" onclick="act(\''+esc(ev.eventId)+'\',\'close\')">Close registration</button>'
    : '<button class="gray" onclick="act(\''+esc(ev.eventId)+'\',\'reopen\')">Reopen registration</button>');
   return '<div class="card"><h2>'+esc(ev.name)+' <span class="status '+esc(ev.status)+'">'+esc(ev.status)+'</span></h2>'+
    '<div class="evmeta">'+esc(ev.eventId)+(ev.date?' · '+esc(ev.date):'')+(ev.location?' · '+esc(ev.location):'')+'</div>'+
    '<div class="links">'+links+'</div>'+
-   '<div class="evmeta">Check-in stations: '+meets+' &nbsp; <a href="#" onclick="addMeeting(\''+esc(ev.eventId)+'\');return false">+ Add meeting</a></div>'+
-   '<div>'+buttons+'</div></div>'}).join('')}
-function addMeeting(id){const n=prompt('Meeting / session name (e.g. Friday Evening Session):');if(!n||!n.trim())return;call('addMeeting',{event:id,name:n.trim()})}
+   '<div class="evmeta" style="margin-top:8px"><b style="color:#26221a">Stations &amp; PINs</b> &nbsp; <a href="#" onclick="addStation(\''+esc(ev.eventId)+'\');return false">+ Add check-in station</a></div>'+
+   '<table style="border-collapse:collapse;font-size:14px">'+stations+'</table>'+
+   '<div style="margin-top:10px">'+buttons+'</div></div>'}).join('')}
+function addStation(id){const n=prompt('Station / session name (e.g. Friday Evening Session):');if(!n||!n.trim())return;call('addStation',{event:id,name:n.trim()})}
 </script></body></html>

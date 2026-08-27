@@ -7,15 +7,17 @@ const SHEETS = Object.freeze({
   REGISTRATIONS: 'Registrations',
   SCAN_LOG: 'Scan Log',
   FOOD_SUMMARY: 'Food Summary',
-  MEETINGS: 'Meetings',
+  STATIONS: 'Stations',
   CHECKINS: 'Check-ins'
 });
 
-// A conference-style event can hold several meetings/sessions, each with its
-// own check-in link and its own duplicate detection. Every event starts with
-// the implicit MAIN meeting; meal pickup stays event-wide.
-const MEETING_HEADERS = Object.freeze(['meeting_id', 'meeting_name', 'active']);
-const CHECKIN_HEADERS = Object.freeze(['timestamp', 'meeting_id', 'registration_id', 'operator']);
+// Every operator post is a "station": the MAIN check-in desk, the meal-pickup
+// window, and any extra meeting/session check-ins. Each station has its own
+// PIN, and the PIN alone routes the universal scanner page to the right
+// station — closing an event silently disables all of its PINs. PINs are
+// stored in the event's own spreadsheet so organizers can read and change them.
+const STATION_HEADERS = Object.freeze(['station_id', 'station_name', 'type', 'pin', 'active']);
+const CHECKIN_HEADERS = Object.freeze(['timestamp', 'station_id', 'registration_id', 'operator']);
 
 const REG_HEADERS = Object.freeze([
   'created_at', 'registration_id', 'qr_token', 'event_id', 'full_name', 'email',
@@ -39,33 +41,69 @@ const USER_HEADERS = Object.freeze([
 // must be served top-level. It talks back to this script through the doPost API.
 const SCANNER_BASE = 'https://jrhan-p.github.io/EventRegistration/scanner.html';
 
-function scannerUrl_(eventId, mode, meetingId) {
-  let url = SCANNER_BASE + '?mode=' + mode + '&event=' + encodeURIComponent(eventId);
-  if (meetingId && meetingId !== 'MAIN') url += '&meeting=' + encodeURIComponent(meetingId);
-  return url;
-}
-
-function eventMeetings_(event) {
-  const fallback = [{ id: 'MAIN', name: 'Main check-in' }];
+function eventStations_(event) {
   try {
-    const sheet = eventDb_(event).getSheetByName(SHEETS.MEETINGS);
-    if (!sheet) return fallback;
+    const sheet = eventDb_(event).getSheetByName(SHEETS.STATIONS);
+    if (!sheet) return [];
     const values = sheet.getDataRange().getValues();
     const idx = headerIndex_(values[0]);
-    const list = values.slice(1)
-      .filter(function(r) { return bool_(r[idx.active]) && cleanText_(r[idx.meeting_id]); })
-      .map(function(r) { return { id: cleanText_(r[idx.meeting_id]), name: cleanText_(r[idx.meeting_name]) }; });
-    return list.length ? list : fallback;
+    return values.slice(1)
+      .filter(function(r) { return bool_(r[idx.active]) && cleanText_(r[idx.station_id]); })
+      .map(function(r) {
+        return {
+          id: cleanText_(r[idx.station_id]),
+          name: cleanText_(r[idx.station_name]),
+          type: cleanText_(r[idx.type]).toLowerCase() === 'meal' ? 'meal' : 'checkin',
+          pin: cleanText_(r[idx.pin])
+        };
+      });
   } catch (err) {
-    return fallback;
+    return [];
   }
 }
 
-function meetingName_(event, meetingId) {
-  const wanted = cleanText_(meetingId) || 'MAIN';
-  const hit = eventMeetings_(event).filter(function(m) { return m.id === wanted; })[0];
-  if (hit) return hit.name;
-  return wanted === 'MAIN' ? 'Main check-in' : '';
+function ensureStations_(event) {
+  const ss = eventDb_(event);
+  let sheet = ss.getSheetByName(SHEETS.STATIONS);
+  if (sheet) return sheet;
+  const taken = allStationPins_();
+  return ensureSheet_(ss, SHEETS.STATIONS, STATION_HEADERS, [
+    ['MAIN', 'Main check-in', 'checkin', genStationPin_(taken), true],
+    ['MEAL', 'Meal pickup', 'meal', genStationPin_(taken), true]
+  ]);
+}
+
+// The PIN alone identifies the station. Only ACTIVE events participate, so
+// closing an event retires its PINs.
+function resolvePin_(pin) {
+  const clean = cleanText_(pin);
+  if (!clean) return null;
+  const events = allEvents_();
+  for (let i = 0; i < events.length; i++) {
+    if (events[i].status !== 'ACTIVE') continue;
+    const stations = eventStations_(events[i]);
+    for (let s = 0; s < stations.length; s++) {
+      if (stations[s].pin && stations[s].pin === clean) {
+        return { event: events[i], stationId: stations[s].id, stationName: stations[s].name, type: stations[s].type };
+      }
+    }
+  }
+  return null;
+}
+
+function allStationPins_() {
+  const taken = {};
+  allEvents_().forEach(function(event) {
+    eventStations_(event).forEach(function(s) { if (s.pin) taken[s.pin] = true; });
+  });
+  return taken;
+}
+
+function genStationPin_(taken) {
+  let pin;
+  do { pin = String(Math.floor(Math.random() * 900000) + 100000); } while (taken[pin]);
+  taken[pin] = true;
+  return pin;
 }
 
 const EVENT_HEADERS = Object.freeze([
@@ -144,7 +182,11 @@ function provisionEvent_(eventsSheet, idx, rowNumber, row) {
   ensureSheet_(ss, SHEETS.REGISTRATIONS, REG_HEADERS);
   ensureSheet_(ss, SHEETS.SCAN_LOG, LOG_HEADERS);
   ensureSheet_(ss, SHEETS.FOOD_SUMMARY, ['meal_name', 'requested', 'marked_ordered', 'redeemed']);
-  ensureSheet_(ss, SHEETS.MEETINGS, MEETING_HEADERS, [['MAIN', 'Main check-in', true]]);
+  const takenPins = allStationPins_();
+  ensureSheet_(ss, SHEETS.STATIONS, STATION_HEADERS, [
+    ['MAIN', 'Main check-in', 'checkin', genStationPin_(takenPins), true],
+    ['MEAL', 'Meal pickup', 'meal', genStationPin_(takenPins), true]
+  ]);
   ensureSheet_(ss, SHEETS.CHECKINS, CHECKIN_HEADERS);
   if (ss.getSheets().length > 1) ss.deleteSheet(initialSheet);
   const form = FormApp.create(name + ' – Registration');
@@ -155,8 +197,8 @@ function provisionEvent_(eventsSheet, idx, rowNumber, row) {
   ScriptApp.newTrigger('handleFormSubmit').forSpreadsheet(ss).onFormSubmit().create();
   eventsSheet.getRange(rowNumber, idx.status + 1).setValue('ACTIVE');
   eventsSheet.getRange(rowNumber, idx.registration_url + 1).setValue(form.getPublishedUrl());
-  eventsSheet.getRange(rowNumber, idx.checkin_scanner_url + 1).setValue(scannerUrl_(eventId, APP.modes.CHECKIN));
-  eventsSheet.getRange(rowNumber, idx.meal_scanner_url + 1).setValue(scannerUrl_(eventId, APP.modes.MEAL));
+  eventsSheet.getRange(rowNumber, idx.checkin_scanner_url + 1).setValue(SCANNER_BASE);
+  eventsSheet.getRange(rowNumber, idx.meal_scanner_url + 1).setValue(SCANNER_BASE);
   eventsSheet.getRange(rowNumber, idx.spreadsheet_url + 1).setValue(ss.getUrl());
   eventsSheet.getRange(rowNumber, idx.form_edit_url + 1).setValue(form.getEditUrl());
   eventsSheet.getRange(rowNumber, idx.spreadsheet_id + 1).setValue(ss.getId());
@@ -206,15 +248,6 @@ function cleanupLegacyData() {
     }
   }
   console.log('Legacy data removed. The old form is closed and renamed "[OLD – safe to delete]"; delete it from Drive whenever you like.');
-}
-
-function setOperatorPins(checkInPin, mealPin) {
-  if (!/^\d{4,10}$/.test(String(checkInPin)) || !/^\d{4,10}$/.test(String(mealPin))) {
-    throw new Error('Each operator PIN must contain 4 to 10 digits.');
-  }
-  const props = PropertiesService.getScriptProperties();
-  props.setProperty('CHECKIN_PIN_HASH', hash_(String(checkInPin)));
-  props.setProperty('MEAL_PIN_HASH', hash_(String(mealPin)));
 }
 
 function setTwilioCredentials(accountSid, authToken, fromNumber) {
