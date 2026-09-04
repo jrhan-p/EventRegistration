@@ -37,8 +37,16 @@ button:disabled{background:#b6b0a2;cursor:wait}
 <div class="wrap">
 <div class="card">
 <input id="pin" inputmode="numeric" type="password" placeholder="Admin PIN" autocomplete="off">
-<button onclick="refresh()">Unlock / Refresh</button></div>
+<button onclick="refresh()">Unlock / Refresh</button>
+<div class="muted"><a href="#" onclick="showRecover();return false" style="color:var(--green);font-weight:600">Forgot the admin PIN?</a></div></div>
 <div id="msg"></div>
+<div class="card" id="recover" style="display:none"><h2>Reset the admin PIN</h2>
+<div class="muted" style="margin-top:0" id="recoverWho">A one-time code is emailed to the organizer address on file. You do not need the old PIN, and nothing else changes.</div>
+<button class="gray" onclick="requestReset()">1 &nbsp;Email me a reset code</button>
+<input id="resetCode" inputmode="numeric" placeholder="2  Code from the email" autocomplete="off">
+<input id="resetPin" inputmode="numeric" type="password" placeholder="3  New admin PIN (4&ndash;10 digits)" autocomplete="off">
+<button onclick="resetPin()">Set the new PIN</button>
+<div class="muted">The code lasts 15 minutes. If the email has not arrived after a minute, check spam.</div></div>
 <div class="card" id="create" style="display:none"><h2>New event</h2>
 <input id="name" placeholder="Event name (e.g. Rummage Sale Lunch)">
 <input id="date" placeholder="Date &amp; time (e.g. 2026-09-20 11:30 AM)">
@@ -51,12 +59,7 @@ button:disabled{background:#b6b0a2;cursor:wait}
 <input id="newAdminPin" inputmode="numeric" type="password" placeholder="New admin PIN (4&ndash;10 digits)" autocomplete="off">
 <input id="newAdminPin2" inputmode="numeric" type="password" placeholder="Type it again" autocomplete="off">
 <button onclick="changeAdminPin()">Change admin PIN</button>
-<div style="margin-top:18px;border-top:1px solid #eee6d4;padding-top:14px">
-<div class="muted" style="margin-top:0"><b>Forgot the admin PIN?</b> Send a reset code to the organizer email on file, then enter it below with the new PIN. Nobody needs the old PIN for this.</div>
-<button class="gray" onclick="requestReset()">Email a reset code</button>
-<input id="resetCode" inputmode="numeric" placeholder="Reset code from the email" autocomplete="off">
-<input id="resetPin" inputmode="numeric" type="password" placeholder="New admin PIN (4&ndash;10 digits)" autocomplete="off">
-<button onclick="resetPin()">Set the new PIN</button></div></div>
+<div class="muted">Lost it? Use <b>Forgot the admin PIN?</b> at the top of this page &mdash; a one-time code is emailed to the organizer address. No code, no spreadsheet, and no Apps Script editor needed.</div></div>
 <div class="card" id="sms" style="display:none"><h2>SMS (Twilio)</h2>
 <div class="muted" id="smsStatus"></div>
 <input id="twSid" placeholder="Account SID (starts with AC)" autocomplete="off">
@@ -68,6 +71,9 @@ button:disabled{background:#b6b0a2;cursor:wait}
 <button onclick="testSms()">Send test SMS</button></div>
 <div class="muted">Credentials are stored in the script's private properties &mdash; never in a spreadsheet or the code repository.</div></div>
 <div class="card" id="tools" style="display:none"><h2>Maintenance</h2>
+<button class="gray" onclick="installMenu()">Add the RCCC Admin menu to the master spreadsheet</button>
+<div class="muted">Adds a menu to the master spreadsheet for setting the admin PIN and listing every station PIN. It only appears for people who also have access to the Apps Script project &mdash; everyone else uses this page.</div>
+<div style="margin-top:16px"></div>
 <button class="red" onclick="cleanup()">Remove legacy single-event data</button>
 <div class="muted">Deletes the old test tabs, test users, and retired form from the original deployment. Safe to run more than once.</div></div>
 </div>
@@ -87,6 +93,18 @@ function call(fn,extra){if(busy){note('Still working on the previous action — 
   .then(function(r){setBusy(false);if(!r||r.ok===false){note((r&&r.message)||'Failed.',false);return}note('Done.',true);render(r)})
   .catch(function(e){setBusy(false);note('Network error: '+e,false)})}
 function refresh(){call('listEvents')}
+function showRecover(){const el=document.getElementById('recover');el.style.display='block';el.scrollIntoView({block:'nearest'})}
+function installMenu(){call('installMenu')}
+// Runs before anything is unlocked: a console that has never had a PIN set
+// must be able to say so, and the way back in must not sit behind the PIN it
+// is trying to replace.
+function loadStatus(){fetch(API,{method:'POST',body:new URLSearchParams({fn:'status'})})
+ .then(function(r){return r.json()})
+ .then(function(r){if(!r||r.ok===false)return;
+  if(r.resetTo)document.getElementById('recoverWho').textContent='A one-time code is emailed to '+r.resetTo+'. You do not need the old PIN, and nothing else changes.';
+  if(!r.ready){note('This system has not been set up yet — create the master spreadsheet first.',false);return}
+  if(!r.configured){showRecover();note('No admin PIN has been set yet. Use the three steps below to set the first one.',true)}})
+ .catch(function(){})}
 function createEvent(){const n=document.getElementById('name').value;if(!n.trim()){note('Enter an event name.',false);return}
  call('createEvent',{name:n,date:document.getElementById('date').value,location:document.getElementById('loc').value})}
 function act(id,a){if(a!=='reopen'&&!confirm(a+' this event?'))return;call('eventAction',{event:id,action:a})}
@@ -154,12 +172,16 @@ function resetPin(){if(!idle())return;const c=v('resetCode'),n=v('resetPin');
  setBusy(true);note('Checking the code…',true);
  fetch(API,{method:'POST',body:new URLSearchParams({fn:'resetPin',code:c,newPin:n})}).then(function(r){return r.json()})
   .then(function(r){setBusy(false);if(!r||r.ok===false){note((r&&r.message)||'Failed.',false);return}
-   ['resetCode','resetPin','pin'].forEach(function(id){document.getElementById(id).value=''});
-   note('Admin PIN reset. Unlock with the new one.',true)})
+   const fresh=document.getElementById('resetPin').value;
+   ['resetCode','resetPin'].forEach(function(id){document.getElementById(id).value=''});
+   document.getElementById('recover').style.display='none';
+   document.getElementById('pin').value=fresh;
+   note('Admin PIN set. Unlocking…',true);refresh()})
   .catch(function(e){setBusy(false);note('Network error: '+e,false)})}
 function addStation(id){if(!idle())return;const n=prompt('Station / session name (e.g. Friday Evening Session):');if(!n||!n.trim())return;call('addStation',{event:id,name:n.trim()})}
 function v(id){return document.getElementById(id).value.trim()}
 function saveTwilio(){if(!v('twSid')||!v('twToken')||!v('twFrom')){note('Fill in the SID, auth token, and phone number.',false);return}
  call('setTwilio',{twSid:v('twSid'),twToken:v('twToken'),twFrom:v('twFrom')})}
 function testSms(){if(!v('twTest')){note('Enter a number to text.',false);return}call('testSms',{to:v('twTest')})}
+loadStatus();
 </script></body></html>

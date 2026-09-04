@@ -49,6 +49,39 @@ function adminListEvents(pin) {
   };
 }
 
+// Shown before anyone has unlocked anything, so it must be safe for a
+// stranger to read: whether a PIN has been set at all, and a masked hint of
+// where a reset code would go. The address itself is never returned, and a
+// reset code is only ever mailed to it — never to whoever asked.
+function adminStatus() {
+  const out = { ok: true, build: APP.version, configured: false, ready: false, resetTo: '' };
+  out.configured = Boolean(PropertiesService.getScriptProperties().getProperty('ADMIN_PIN_HASH'));
+  try {
+    out.resetTo = adminPinResetRecipients_().map(maskEmail_).filter(Boolean).join(', ');
+    out.ready = true;
+  } catch (err) {
+    // No master spreadsheet yet — the very first bootstrap still needs the editor.
+  }
+  return out;
+}
+
+function maskEmail_(email) {
+  const clean = cleanText_(email);
+  const at = clean.indexOf('@');
+  if (at < 1) return '';
+  const name = clean.slice(0, at);
+  return (name.length <= 2 ? name.charAt(0) : name.charAt(0) + '\u2026' + name.charAt(name.length - 1)) + clean.slice(at);
+}
+
+// Puts the RCCC Admin menu in the master spreadsheet without a trip to the
+// editor. The trigger belongs to whoever the web app runs as, so the menu
+// reaches people who also have script-project access — see Menu.gs.
+function adminInstallMenu(pin) {
+  requireAdmin_(pin);
+  installAdminMenu_(null);
+  return adminListEvents(pin);
+}
+
 function adminSetTwilio(pin, accountSid, authToken, fromNumber) {
   requireAdmin_(pin);
   const sid = cleanText_(accountSid);

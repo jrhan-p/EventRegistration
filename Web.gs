@@ -77,10 +77,14 @@ function doPost(e) {
     if (fn === 'listEvents') return out(Object.assign({ ok: true }, adminListEvents(p.pin)));
     if (fn === 'createEvent') return out(Object.assign({ ok: true }, adminCreateEvent(p.pin, p.name, p.date, p.location)));
     if (fn === 'eventAction') return out(Object.assign({ ok: true }, adminEventAction(p.pin, p.event, p.action)));
+    // No admin PIN required: this tells the page whether to open in
+    // first-run, locked, or recovery mode before anything is unlocked.
+    if (fn === 'status') return out(adminStatus());
     // No admin PIN required: these two ARE the recovery path. The code goes
     // only to the organizer addresses on file, never to the caller.
     if (fn === 'requestPinReset') return out(adminRequestPinReset());
     if (fn === 'resetPin') return out(adminResetPinWithCode(p.code, p.newPin));
+    if (fn === 'installMenu') return out(Object.assign({ ok: true }, adminInstallMenu(p.pin)));
     if (fn === 'setStationPin') return out(Object.assign({ ok: true }, adminSetStationPin(p.pin, p.event, p.station, p.newPin)));
     if (fn === 'setAdminPin') return out(adminChangeAdminPin(p.pin, p.newPin));
     if (fn === 'cleanupLegacy') return out(Object.assign({ ok: true }, adminCleanupLegacy(p.pin)));
