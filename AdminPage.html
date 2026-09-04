@@ -43,10 +43,10 @@ button:disabled{background:#b6b0a2;cursor:wait}
 <div class="card" id="recover" style="display:none"><h2>Reset the admin PIN</h2>
 <div class="muted" style="margin-top:0" id="recoverWho">A one-time code is emailed to the organizer address on file. You do not need the old PIN, and nothing else changes.</div>
 <button class="gray" onclick="requestReset()">1 &nbsp;Email me a reset code</button>
-<input id="resetCode" inputmode="numeric" placeholder="2  Code from the email" autocomplete="off">
-<input id="resetPin" inputmode="numeric" type="password" placeholder="3  New admin PIN (4&ndash;10 digits)" autocomplete="off">
+<input id="resetCode" placeholder="2  Code from the email (like ABCD-EFGH)" autocomplete="off" autocapitalize="characters">
+<input id="resetPin" inputmode="numeric" type="password" placeholder="3  New admin PIN (6&ndash;10 digits)" autocomplete="off">
 <button onclick="resetPin()">Set the new PIN</button>
-<div class="muted">The code lasts 15 minutes. If the email has not arrived after a minute, check spam.</div></div>
+<div class="muted">The code lasts 15 minutes and goes only to the organizer address &mdash; never to whoever asked for it. If it has not arrived after a minute, check spam.</div></div>
 <div class="card" id="create" style="display:none"><h2>New event</h2>
 <input id="name" placeholder="Event name (e.g. Rummage Sale Lunch)">
 <input id="date" placeholder="Date &amp; time (e.g. 2026-09-20 11:30 AM)">
@@ -56,7 +56,7 @@ button:disabled{background:#b6b0a2;cursor:wait}
 <div id="list"></div>
 <div class="card" id="pinCard" style="display:none"><h2>Admin PIN</h2>
 <div class="muted">This is the PIN that opens this console. Station PINs are changed on each event's card above.</div>
-<input id="newAdminPin" inputmode="numeric" type="password" placeholder="New admin PIN (4&ndash;10 digits)" autocomplete="off">
+<input id="newAdminPin" inputmode="numeric" type="password" placeholder="New admin PIN (6&ndash;10 digits)" autocomplete="off">
 <input id="newAdminPin2" inputmode="numeric" type="password" placeholder="Type it again" autocomplete="off">
 <button onclick="changeAdminPin()">Change admin PIN</button>
 <div class="muted">Lost it? Use <b>Forgot the admin PIN?</b> at the top of this page &mdash; a one-time code is emailed to the organizer address. No code, no spreadsheet, and no Apps Script editor needed.</div></div>
@@ -165,17 +165,18 @@ function changeAdminPin(){const a=v('newAdminPin'),b=v('newAdminPin2');
  call('setAdminPin',{newPin:a})}
 function requestReset(){if(!idle())return;setBusy(true);note('Sending the reset code…',true);
  fetch(API,{method:'POST',body:new URLSearchParams({fn:'requestPinReset'})}).then(function(r){return r.json()})
-  .then(function(r){setBusy(false);note((r&&r.message)||'Sent.',true)})
+  .then(function(r){setBusy(false);if(!r||r.ok===false){note((r&&r.message)||'Could not send the code.',false);return}
+   note((r&&r.message)||'Sent.',true)})
   .catch(function(e){setBusy(false);note('Network error: '+e,false)})}
 function resetPin(){if(!idle())return;const c=v('resetCode'),n=v('resetPin');
  if(!c||!n){note('Enter both the reset code and the new PIN.',false);return}
  setBusy(true);note('Checking the code…',true);
  fetch(API,{method:'POST',body:new URLSearchParams({fn:'resetPin',code:c,newPin:n})}).then(function(r){return r.json()})
   .then(function(r){setBusy(false);if(!r||r.ok===false){note((r&&r.message)||'Failed.',false);return}
-   const fresh=document.getElementById('resetPin').value;
+   // n, not the raw field: the server stored the hash of the trimmed value.
    ['resetCode','resetPin'].forEach(function(id){document.getElementById(id).value=''});
    document.getElementById('recover').style.display='none';
-   document.getElementById('pin').value=fresh;
+   document.getElementById('pin').value=n;
    note('Admin PIN set. Unlocking…',true);refresh()})
   .catch(function(e){setBusy(false);note('Network error: '+e,false)})}
 function addStation(id){if(!idle())return;const n=prompt('Station / session name (e.g. Friday Evening Session):');if(!n||!n.trim())return;call('addStation',{event:id,name:n.trim()})}

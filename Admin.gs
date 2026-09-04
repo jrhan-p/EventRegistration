@@ -1,11 +1,15 @@
 function requireAdmin_(pin) {
   const expected = PropertiesService.getScriptProperties().getProperty('ADMIN_PIN_HASH');
-  if (!expected || hash_(String(pin)) !== expected) throw new Error('Admin PIN is incorrect.');
+  // cleanText_ here too: every setter stores the hash of the trimmed PIN, so
+  // hashing the raw parameter would reject a PIN with a stray space that the
+  // page itself trimmed on the way in.
+  if (!expected || hash_(cleanText_(pin)) !== expected) throw new Error('Admin PIN is incorrect.');
 }
 
 function setAdminPin(pin) {
-  if (!/^\d{4,10}$/.test(String(pin))) throw new Error('The admin PIN must contain 4 to 10 digits.');
-  PropertiesService.getScriptProperties().setProperty('ADMIN_PIN_HASH', hash_(String(pin)));
+  const clean = cleanText_(pin);
+  if (!/^\d{6,10}$/.test(clean)) throw new Error('The admin PIN must be 6 to 10 digits.');
+  PropertiesService.getScriptProperties().setProperty('ADMIN_PIN_HASH', hash_(clean));
 }
 
 function adminListEvents(pin) {
@@ -268,70 +272,137 @@ function adminChangeAdminPin(pin, newPin) {
 // Losing the admin PIN must not mean losing the system. The check here is
 // control of an organizer mailbox — a real factor, already available, and one
 // that does NOT require handing anybody the script project, which would also
-// hand them the Twilio token and the Wallet signing key. The code is only ever
-// mailed to addresses configured in the master spreadsheet's Settings sheet,
-// never to an address supplied by the caller, so this public endpoint cannot
-// be aimed at anyone.
+// hand them the Twilio token and the Wallet signing key.
+//
+// Both endpoints below are reachable by anyone who has the /exec URL, which is
+// printed in every ticket email, so the design assumes a hostile caller:
+//   - a wrong code never destroys the code sitting in the organizer's inbox,
+//     because a stranger must not be able to hold recovery shut by guessing;
+//   - a still-valid code is never replaced, so asking again cannot invalidate
+//     what the organizer is holding;
+//   - sends are capped per day and always leave headroom in the mail quota,
+//     which is shared with the guests' ticket emails and is the scarcer
+//     resource of the two;
+//   - the answer is identical whatever happens, so nothing here reports
+//     whether an address is configured or a mailbox is saturated.
+// Guessing is bounded instead by the size of the code: 32^8, about a trillion.
+const RESET_CODE_TTL_MS = 15 * 60 * 1000;
+const RESET_MAX_PER_DAY = 8;
+const RESET_MAIL_RESERVE = 25;
+// No 0/O/1/I — this gets read off a screen and typed by hand.
+const RESET_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+
 function adminPinResetRecipients_() {
   const configured = setting_('ADMIN_EMAILS') || setting_('ORGANIZER_EMAIL');
-  return cleanText_(configured).split(/[,;\s]+/).map(cleanText_).filter(Boolean);
+  // Filtered the same way here and in adminStatus, so the address the console
+  // names is exactly the address the code is sent to.
+  return cleanText_(configured).split(/[,;\s]+/).map(cleanText_)
+    .filter(function(a) { return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a); });
+}
+
+function newResetCode_() {
+  // getUuid is a random UUID; 256 % 32 === 0, so the mapping stays uniform.
+  const hex = (Utilities.getUuid() + Utilities.getUuid()).replace(/[^0-9a-f]/gi, '');
+  let code = '';
+  for (let i = 0; i < 8; i++) code += RESET_ALPHABET.charAt(parseInt(hex.substr(i * 2, 2), 16) % 32);
+  return code;
+}
+
+function normalizeResetCode_(code) {
+  return cleanText_(code).toUpperCase().replace(/[^0-9A-Z]/g, '');
+}
+
+function clearAdminReset_(props) {
+  props.deleteProperty('ADMIN_RESET_HASH');
+  props.deleteProperty('ADMIN_RESET_EXPIRES');
 }
 
 function adminRequestPinReset() {
-  const cache = CacheService.getScriptCache();
-  // Generic answer either way: whether a mailbox is configured is not
-  // something a stranger gets to learn, and the cooldown keeps the endpoint
-  // from being used to flood the organizer (Gmail also caps daily sends).
   const generic = { ok: true, message: 'If an organizer address is on file, a reset code is on its way. It expires in 15 minutes.' };
-  if (cache.get('pinreset:cooldown')) return generic;
-  const to = adminPinResetRecipients_();
-  if (!to.length) return generic;
-  const code = String(Math.floor(Math.random() * 900000) + 100000);
-  const props = PropertiesService.getScriptProperties();
-  props.setProperties({
-    ADMIN_RESET_HASH: hash_(code),
-    ADMIN_RESET_EXPIRES: String(Date.now() + 15 * 60 * 1000),
-    ADMIN_RESET_TRIES: '0'
-  });
-  cache.put('pinreset:cooldown', '1', 600);
-  MailApp.sendEmail({
-    to: to.join(','),
-    subject: 'RCCC Events — admin PIN reset code: ' + code,
-    body: 'Someone asked to reset the admin PIN for RCCC Community Events.\n\n' +
-      'Reset code: ' + code + '\n\nIt expires in 15 minutes and works once.\n\n' +
-      'Enter it in the admin console under "Admin PIN".\n\n' +
-      'If this was not you, ignore this email — the current PIN still works and nothing has changed.'
-  });
-  return generic;
+  const lock = LockService.getScriptLock();
+  // A burst collapses into one send instead of stacking: the check and the
+  // send have to be one step, or every parallel caller passes the check.
+  if (!lock.tryLock(10000)) return generic;
+  try {
+    const props = PropertiesService.getScriptProperties();
+    // A code that is still good is never replaced — otherwise anyone could
+    // invalidate the one the organizer is reading right now.
+    if (Date.now() < Number(props.getProperty('ADMIN_RESET_EXPIRES') || 0)) return generic;
+    const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    const sentToday = props.getProperty('ADMIN_RESET_DAY') === today
+      ? Number(props.getProperty('ADMIN_RESET_COUNT') || 0) : 0;
+    if (sentToday >= RESET_MAX_PER_DAY) return generic;
+    const to = adminPinResetRecipients_();
+    if (!to.length) return generic;
+    // Guests' tickets come out of this same daily allowance. Never spend the
+    // last of it on a reset code.
+    if (MailApp.getRemainingDailyQuota() <= RESET_MAIL_RESERVE + to.length) return generic;
+    const code = newResetCode_();
+    props.setProperties({
+      ADMIN_RESET_HASH: hash_(code),
+      ADMIN_RESET_EXPIRES: String(Date.now() + RESET_CODE_TTL_MS)
+    });
+    try {
+      MailApp.sendEmail({
+        to: to.join(','),
+        // Not in the subject: subjects show up on lock screens, in
+        // notification previews, and in forwarded threads.
+        subject: 'RCCC Events — admin PIN reset',
+        body: 'Someone asked to reset the admin PIN for RCCC Community Events.\n\n' +
+          'Reset code: ' + code.slice(0, 4) + '-' + code.slice(4) + '\n\n' +
+          'It expires in 15 minutes and works once. Enter it in the admin console.\n\n' +
+          'If this was not you, ignore this email. The current PIN still works, ' +
+          'nothing has changed, and whoever asked did not receive this code.'
+      });
+    } catch (err) {
+      // Nobody got it, so nothing should be left standing waiting for it.
+      clearAdminReset_(props);
+      console.error('Reset code email failed: ' + err);
+      return generic;
+    }
+    props.setProperties({ ADMIN_RESET_DAY: today, ADMIN_RESET_COUNT: String(sentToday + 1) });
+    return generic;
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function adminResetPinWithCode(code, newPin) {
-  const props = PropertiesService.getScriptProperties();
-  const expected = props.getProperty('ADMIN_RESET_HASH');
-  const expires = Number(props.getProperty('ADMIN_RESET_EXPIRES') || 0);
-  const tries = Number(props.getProperty('ADMIN_RESET_TRIES') || 0);
-  const clearReset = function() {
-    props.deleteProperty('ADMIN_RESET_HASH');
-    props.deleteProperty('ADMIN_RESET_EXPIRES');
-    props.deleteProperty('ADMIN_RESET_TRIES');
-  };
-  if (!expected || !expires || Date.now() > expires) {
-    clearReset();
-    throw new Error('That code has expired. Request a new one.');
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const expected = props.getProperty('ADMIN_RESET_HASH');
+    const expires = Number(props.getProperty('ADMIN_RESET_EXPIRES') || 0);
+    if (!expected || Date.now() > expires) {
+      throw new Error('That code has expired, or none was issued. Ask for a new one.');
+    }
+    const cache = CacheService.getScriptCache();
+    if (cache.get('pinreset:wait')) {
+      throw new Error('Too many attempts just now. Wait a minute, then try again — your code is still good.');
+    }
+    if (hash_(normalizeResetCode_(code)) !== expected) {
+      // Slow guessing down; never void the code. A stranger guessing must not
+      // be able to take the organizer's own code away from them.
+      const misses = Number(cache.get('pinreset:misses') || 0) + 1;
+      if (misses >= 5) {
+        cache.put('pinreset:wait', '1', 60);
+        cache.remove('pinreset:misses');
+      } else {
+        cache.put('pinreset:misses', String(misses), 300);
+      }
+      throw new Error('That code is not right.');
+    }
+    // Validated before the code is spent, so a rejected PIN does not cost
+    // another trip through the mailbox.
+    applyNewAdminPin_(newPin);
+    clearAdminReset_(props);
+    cache.remove('pinreset:misses');
+    cache.remove('pinreset:wait');
+    return { ok: true, adminPinChanged: true };
+  } finally {
+    lock.releaseLock();
   }
-  if (tries >= 5) {
-    clearReset();
-    throw new Error('Too many wrong codes. Request a new one.');
-  }
-  if (hash_(cleanText_(code)) !== expected) {
-    props.setProperty('ADMIN_RESET_TRIES', String(tries + 1));
-    throw new Error('That code is not right.');
-  }
-  // Validate the new PIN before burning the code, so a rejected PIN does not
-  // force another round trip through the mailbox.
-  applyNewAdminPin_(newPin);
-  clearReset();
-  return { ok: true, adminPinChanged: true };
 }
 
 function adminAddStation(pin, eventId, name) {
@@ -342,7 +413,7 @@ function adminAddStation(pin, eventId, name) {
   if (!clean) throw new Error('Enter a station name.');
   const sheet = ensureStations_(event);
   const stationId = 'S-' + Utilities.getUuid().replace(/-/g, '').slice(0, 4).toUpperCase();
-  sheet.appendRow([stationId, clean, 'checkin', genStationPin_(allStationPins_(true)), true, '', '']);
+  sheet.appendRow([stationId, clean, 'checkin', genStationPin_(allStationPins_()), true, '', '']);
   return adminListEvents(pin);
 }
 

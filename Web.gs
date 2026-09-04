@@ -4,7 +4,12 @@ function doGet(e) {
   if (view === 'receipt') return renderReceipt_(e.parameter.token, e.parameter.event);
   if (view === 'admin') {
     const admin = HtmlService.createTemplateFromFile('AdminPage');
-    admin.webAppUrl = setting_('WEB_APP_URL');
+    // Unguarded, this throws before rendering whenever the master spreadsheet
+    // is missing or its Settings tab was renamed — the exact state the page's
+    // own "not set up yet" message exists to explain.
+    let url = '';
+    try { url = setting_('WEB_APP_URL'); } catch (err) { url = cleanText_(ScriptApp.getService().getUrl()); }
+    admin.webAppUrl = url;
     admin.consoleBuild = APP.version;
     return page_(admin.evaluate().setTitle('Event admin'));
   }

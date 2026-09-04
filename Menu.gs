@@ -60,8 +60,14 @@ function installAdminMenu() {
 // One validation path for every way the admin PIN can be set.
 function applyNewAdminPin_(newPin) {
   const clean = cleanText_(newPin);
-  if (!/^\d{4,10}$/.test(clean)) throw new Error('The admin PIN must be 4 to 10 digits.');
-  if (allStationPins_(true)[clean]) throw new Error('That PIN already belongs to a station — pick a different one.');
+  // Six, not four: this PIN is checked by an endpoint anyone can reach, and
+  // four digits is ten thousand guesses.
+  if (!/^\d{6,10}$/.test(clean)) throw new Error('The admin PIN must be 6 to 10 digits.');
+  // Deliberately NOT the strict read. Setting a PIN is the recovery path, and
+  // one trashed event spreadsheet must never be able to block every route
+  // back into the system; a station-PIN clash is a nuisance, being locked out
+  // is not recoverable.
+  if (allStationPins_()[clean]) throw new Error('That PIN already belongs to a station — pick a different one.');
   setAdminPin(clean);
   return clean;
 }
@@ -84,7 +90,7 @@ function menuSetAdminPin() {
 function menuGenerateAdminPin() {
   const ui = ui_();
   if (!ui) return;
-  const taken = allStationPins_(true);
+  const taken = allStationPins_();
   let pin;
   do { pin = String(Math.floor(Math.random() * 900000) + 100000); } while (taken[pin]);
   const res = ui.alert('New admin PIN: ' + pin,
@@ -132,7 +138,7 @@ function menuOpenConsole() {
 // That log is visible to anyone with project access — the same people who
 // could reset the PIN anyway.
 function resetAdminPinFromEditor() {
-  const taken = allStationPins_(true);
+  const taken = allStationPins_();
   let pin;
   do { pin = String(Math.floor(Math.random() * 900000) + 100000); } while (taken[pin]);
   applyNewAdminPin_(pin);
