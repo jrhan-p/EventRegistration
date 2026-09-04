@@ -112,10 +112,59 @@ function resolvePin_(pin) {
   return null;
 }
 
-function allStationPins_() {
+// A PIN that was just changed, retired, or deleted must stop working now, not
+// in five minutes when its cache entry lapses.
+function forgetPin_(pin) {
+  const clean = cleanText_(pin);
+  if (clean) CacheService.getScriptCache().remove('pin:' + clean);
+}
+
+// Every station row of every event, including switched-off ones, with the
+// active flag exposed. eventStations_ is the wrong source for anything except
+// scan routing: it hides inactive rows and returns [] on a read error.
+function allStationRows_(event) {
+  const sheet = eventDb_(event).getSheetByName(SHEETS.STATIONS);
+  if (!sheet) return [];
+  const values = sheet.getDataRange().getValues();
+  if (!values.length) return [];
+  const idx = headerIndex_(values[0]);
+  const rows = [];
+  for (let r = 1; r < values.length; r++) {
+    const id = cleanText_(values[r][idx.station_id]);
+    if (!id) continue;
+    rows.push({
+      id: id,
+      name: cleanText_(values[r][idx.station_name]),
+      type: cleanText_(values[r][idx.type]).toLowerCase() === 'meal' ? 'meal' : 'checkin',
+      pin: cleanText_(values[r][idx.pin]),
+      active: bool_(values[r][idx.active]),
+      location: idx.location !== undefined ? cleanText_(values[r][idx.location]) : ''
+    });
+  }
+  return rows;
+}
+
+// Uniqueness has to count PINs that are parked, not just live ones: a station
+// is switched off and back on by flipping one cell, and if its PIN was handed
+// to somebody else meanwhile, two live stations answer to the same number and
+// resolvePin_ silently routes scans to whichever event is listed first.
+// strict=true refuses to answer at all when an event's sheet cannot be read,
+// rather than reporting its PINs as free — the same mistake the orphan-trigger
+// sweep is careful not to make.
+function allStationPins_(strict) {
   const taken = {};
   allEvents_().forEach(function(event) {
-    eventStations_(event).forEach(function(s) { if (s.pin) taken[s.pin] = true; });
+    let rows;
+    try {
+      rows = allStationRows_(event);
+    } catch (err) {
+      if (strict) {
+        throw new Error('Could not read the stations of "' + event.name +
+          '" to confirm the PIN is free. Try again in a moment.');
+      }
+      return;
+    }
+    rows.forEach(function(s) { if (s.pin) taken[s.pin] = true; });
   });
   return taken;
 }
@@ -146,6 +195,7 @@ function setupApplication() {
   ensureSheet_(ss, SHEETS.MEAL_TEMPLATE, ['meal_name', 'active'], [
     ['Chicken', true], ['Vegetarian', true], [APP.noMeal, true]
   ]);
+  installAdminMenu_(ss);
   return { masterSpreadsheetUrl: ss.getUrl() };
 }
 

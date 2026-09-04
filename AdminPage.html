@@ -46,6 +46,17 @@ button:disabled{background:#b6b0a2;cursor:wait}
 <button onclick="createEvent()">Create event</button>
 <div class="muted">Creates the event's spreadsheet, registration form, and scanner links in one step. Customize the form afterward via its edit link.</div></div>
 <div id="list"></div>
+<div class="card" id="pinCard" style="display:none"><h2>Admin PIN</h2>
+<div class="muted">This is the PIN that opens this console. Station PINs are changed on each event's card above.</div>
+<input id="newAdminPin" inputmode="numeric" type="password" placeholder="New admin PIN (4&ndash;10 digits)" autocomplete="off">
+<input id="newAdminPin2" inputmode="numeric" type="password" placeholder="Type it again" autocomplete="off">
+<button onclick="changeAdminPin()">Change admin PIN</button>
+<div style="margin-top:18px;border-top:1px solid #eee6d4;padding-top:14px">
+<div class="muted" style="margin-top:0"><b>Forgot the admin PIN?</b> Send a reset code to the organizer email on file, then enter it below with the new PIN. Nobody needs the old PIN for this.</div>
+<button class="gray" onclick="requestReset()">Email a reset code</button>
+<input id="resetCode" inputmode="numeric" placeholder="Reset code from the email" autocomplete="off">
+<input id="resetPin" inputmode="numeric" type="password" placeholder="New admin PIN (4&ndash;10 digits)" autocomplete="off">
+<button onclick="resetPin()">Set the new PIN</button></div></div>
 <div class="card" id="sms" style="display:none"><h2>SMS (Twilio)</h2>
 <div class="muted" id="smsStatus"></div>
 <input id="twSid" placeholder="Account SID (starts with AC)" autocomplete="off">
@@ -85,7 +96,9 @@ function cleanup(){if(confirm('Remove the legacy test data? This cannot be undon
 function esc(s){return String(s||'').replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
 function updateSms(r){const el=document.getElementById('smsStatus');
  el.textContent=r.smsConfigured?('Configured — texts are sent from '+r.smsFrom+'.'):'Not configured — registration texts are skipped until credentials are saved.'}
-function render(r){document.getElementById('create').style.display='block';document.getElementById('tools').style.display='block';document.getElementById('sms').style.display='block';
+function render(r){document.getElementById('create').style.display='block';document.getElementById('tools').style.display='block';document.getElementById('sms').style.display='block';document.getElementById('pinCard').style.display='block';
+ if(r.adminPinChanged){['newAdminPin','newAdminPin2','pin'].forEach(function(id){document.getElementById(id).value=''});
+  note('Admin PIN changed. Unlock again with the new one.',true);return}
  if(r.build&&r.build!==CONSOLE_BUILD){note('This page is outdated (v'+CONSOLE_BUILD+' vs server v'+r.build+') — press Cmd+Shift+R to hard-refresh, then unlock again.',false);return}
  if(r.smsConfigured!==undefined)updateSms(r);
  if(!r.events){if(r.sent)note('Test SMS sent to '+r.sent+'.',true);document.getElementById('twToken').value='';return}
@@ -95,25 +108,56 @@ function render(r){document.getElementById('create').style.display='block';docum
   '<div class="links" style="margin-top:10px"><a href="'+esc(r.scannerUrl)+'" target="_blank">'+esc(r.scannerUrl)+'</a></div></div>':'';
  if(!r.events.length){list.innerHTML=scannerCard+'<div class="card muted">No events yet. Create the first one above.</div>';return}
  list.innerHTML=scannerCard+r.events.map(function(ev){
+  const id=q(ev.eventId);
   const links=[['Registration form',ev.registrationUrl],['Spreadsheet',ev.spreadsheetUrl],['Edit form',ev.formEditUrl]]
    .filter(function(l){return l[1]}).map(function(l){return '<a href="'+esc(l[1])+'" target="_blank">'+esc(l[0])+'</a>'}).join('');
   const stations=(ev.stations||[]).map(function(s){
-   return '<tr><td style="padding:4px 14px 4px 0">'+esc(s.name)+(s.location?' <span style="color:#8a8272;font-size:12px">('+esc(s.location)+')</span>':'')+'</td>'+
+   return '<tr'+(s.active===false?' style="opacity:.55"':'')+'><td style="padding:4px 14px 4px 0">'+esc(s.name)+(s.location?' <span style="color:#8a8272;font-size:12px">('+esc(s.location)+')</span>':'')+(s.active===false?' <span style="color:#8a8272;font-size:12px">(switched off)</span>':'')+'</td>'+
     '<td style="padding:4px 14px 4px 0;color:#8a8272">'+(s.type==='meal'?'Meal pickup':'Check-in')+'</td>'+
-    '<td style="padding:4px 0;font-family:ui-monospace,Menlo,monospace;font-weight:700;letter-spacing:2px">'+esc(s.pin||'—')+'</td></tr>'}).join('');
+    '<td style="padding:4px 14px 4px 0;font-family:ui-monospace,Menlo,monospace;font-weight:700;letter-spacing:2px">'+esc(s.pin||'\u2014')+'</td>'+
+    '<td style="padding:4px 0"><a href="#" style="font-size:13px;color:#1d4a38;font-weight:600" onclick="chPin('+id+','+q(s.id)+','+q(s.name)+');return false">Change</a></td></tr>'}).join('');
   const buttons=(ev.status==='ACTIVE'
-   ? '<button onclick="act(\''+esc(ev.eventId)+'\',\'finalize\')">Finalize meal order</button><button class="gray" onclick="act(\''+esc(ev.eventId)+'\',\'close\')">Close registration</button>'
+   ? '<button onclick="act('+id+',\'finalize\')">Finalize meal order</button><button class="gray" onclick="act('+id+',\'close\')">Close registration</button>'
    : ev.status==='CLOSED'
-   ? '<button class="gray" onclick="act(\''+esc(ev.eventId)+'\',\'reopen\')">Reopen registration</button>'
-   : '<span class="muted" style="margin-right:10px">This event never finished being created — delete it and make a new one.</span>')
-   +'<button class="red" onclick="delEvent(\''+esc(ev.eventId)+'\',\''+esc(String(ev.name||'').replace(/['\\]/g,''))+'\')">Delete</button>';
+   ? '<button class="gray" onclick="act('+id+',\'reopen\')">Reopen registration</button>'
+   : '<span class="muted" style="margin-right:10px">This event never finished being created \u2014 delete it and make a new one.</span>')
+   +'<button class="red" onclick="delEvent('+id+','+q(ev.name)+')">Delete</button>';
   return '<div class="card"><h2>'+esc(ev.name)+' <span class="status '+esc(ev.status)+'">'+esc(ev.status)+'</span></h2>'+
-   '<div class="evmeta">'+esc(ev.eventId)+(ev.date?' · '+esc(ev.date):'')+(ev.location?' · '+esc(ev.location):'')+'</div>'+
+   '<div class="evmeta">'+esc(ev.eventId)+(ev.date?' \u00b7 '+esc(ev.date):'')+(ev.location?' \u00b7 '+esc(ev.location):'')+'</div>'+
    '<div class="links">'+links+'</div>'+
-   '<div class="evmeta" style="margin-top:8px"><b style="color:#26221a">Stations &amp; PINs</b> &nbsp; <a href="#" onclick="addStation(\''+esc(ev.eventId)+'\');return false">+ Add check-in station</a></div>'+
+   '<div class="evmeta" style="margin-top:8px"><b style="color:#26221a">Stations &amp; PINs</b> &nbsp; <a href="#" onclick="addStation('+id+');return false">+ Add check-in station</a></div>'+
    '<table style="border-collapse:collapse;font-size:14px">'+stations+'</table>'+
    '<div style="margin-top:10px">'+buttons+'</div></div>'}).join('')}
-function addStation(id){const n=prompt('Station / session name (e.g. Friday Evening Session):');if(!n||!n.trim())return;call('addStation',{event:id,name:n.trim()})}
+// An event name reaches the page as data and leaves it as a JS string sitting
+// inside an HTML attribute, so it needs both escapes, in that order: make a
+// valid JS literal, then escape it for the attribute the browser decodes first.
+function q(s){return esc("'"+String(s==null?'':s).replace(/[\r\n]/g,' ').replace(/\\/g,'\\\\').replace(/'/g,"\\'")+"'")}
+// setBusy only disables <button>; these links would otherwise stay live and
+// throw away whatever the operator typed into the prompt.
+function idle(){if(busy){note('Still working on the previous action — please wait.',false);return false}return true}
+function chPin(ev,st,name){if(!idle())return;
+ const n=prompt('New PIN for "'+name+'" \u2014 6 to 8 digits.\nLeave blank to generate a random one.');
+ if(n===null)return;call('setStationPin',{event:ev,station:st,newPin:n.trim()})}
+function changeAdminPin(){const a=v('newAdminPin'),b=v('newAdminPin2');
+ if(!a){note('Enter the new admin PIN.',false);return}
+ if(a!==b){note('The two PINs do not match.',false);return}
+ // Deliberately not echoing the PIN: both fields are masked for a reason, and
+ // typing it twice already proves intent.
+ if(!confirm('Change the admin PIN? Everyone using the old one will need the new one.'))return;
+ call('setAdminPin',{newPin:a})}
+function requestReset(){if(!idle())return;setBusy(true);note('Sending the reset code…',true);
+ fetch(API,{method:'POST',body:new URLSearchParams({fn:'requestPinReset'})}).then(function(r){return r.json()})
+  .then(function(r){setBusy(false);note((r&&r.message)||'Sent.',true)})
+  .catch(function(e){setBusy(false);note('Network error: '+e,false)})}
+function resetPin(){if(!idle())return;const c=v('resetCode'),n=v('resetPin');
+ if(!c||!n){note('Enter both the reset code and the new PIN.',false);return}
+ setBusy(true);note('Checking the code…',true);
+ fetch(API,{method:'POST',body:new URLSearchParams({fn:'resetPin',code:c,newPin:n})}).then(function(r){return r.json()})
+  .then(function(r){setBusy(false);if(!r||r.ok===false){note((r&&r.message)||'Failed.',false);return}
+   ['resetCode','resetPin','pin'].forEach(function(id){document.getElementById(id).value=''});
+   note('Admin PIN reset. Unlock with the new one.',true)})
+  .catch(function(e){setBusy(false);note('Network error: '+e,false)})}
+function addStation(id){if(!idle())return;const n=prompt('Station / session name (e.g. Friday Evening Session):');if(!n||!n.trim())return;call('addStation',{event:id,name:n.trim()})}
 function v(id){return document.getElementById(id).value.trim()}
 function saveTwilio(){if(!v('twSid')||!v('twToken')||!v('twFrom')){note('Fill in the SID, auth token, and phone number.',false);return}
  call('setTwilio',{twSid:v('twSid'),twToken:v('twToken'),twFrom:v('twFrom')})}

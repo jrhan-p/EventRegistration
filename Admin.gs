@@ -23,8 +23,8 @@ function adminListEvents(pin) {
       let stations = [];
       try {
         ensureStations_(lite);
-        stations = eventStations_(lite).map(function(s) {
-          return { id: s.id, name: s.name, type: s.type, pin: s.pin, location: s.location };
+        stations = allStationRows_(lite).map(function(s) {
+          return { id: s.id, name: s.name, type: s.type, pin: s.pin, location: s.location, active: s.active };
         });
       } catch (err) {}
       events.push({
@@ -146,7 +146,15 @@ function adminEventAction(pin, eventId, action) {
       if (formId) {
         try { FormApp.openById(formId).setAcceptingResponses(false); } catch (err) {}
       }
-      if (spreadsheetId) detachFormTrigger_(spreadsheetId);
+      if (spreadsheetId) {
+        detachFormTrigger_(spreadsheetId);
+        // Retire the PINs now rather than leaving them live until the
+        // resolvePin_ cache lapses five minutes from here.
+        try {
+          allStationRows_({ eventId: cleanId, spreadsheetId: spreadsheetId })
+            .forEach(function(st) { forgetPin_(st.pin); });
+        } catch (err) {}
+      }
       sheet.deleteRow(rowNumber);
     } else {
       throw new Error('Unknown action "' + wanted + '".');
@@ -157,6 +165,142 @@ function adminEventAction(pin, eventId, action) {
   return adminListEvents(pin);
 }
 
+// Any station PIN can be reissued: a leaked PIN, a volunteer who left, or an
+// organizer who just wants a memorable number. A blank newPin draws a fresh
+// random one.
+function adminSetStationPin(pin, eventId, stationId, newPin) {
+  requireAdmin_(pin);
+  const wantedStation = cleanText_(stationId);
+  if (!wantedStation) throw new Error('Unknown station.');
+  const clean = cleanText_(newPin);
+  // Six digits is the floor because the station PIN is the only credential on
+  // the scan, resolvePin, and phoneLookup endpoints, which are public and
+  // unthrottled. Four digits would be ten thousand guesses.
+  if (clean && !/^\d{6,8}$/.test(clean)) throw new Error('A station PIN must be 6 to 8 digits.');
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const event = eventById_(eventId);
+    if (!event) throw new Error('Unknown event.');
+    const sheet = ensureStations_(event);
+    // Read every PIN in the system first: this opens each event's spreadsheet
+    // and takes seconds, and the target row must not be located before it —
+    // an organizer editing the Stations sheet meanwhile would shift it.
+    const taken = allStationPins_(true);
+    const values = sheet.getDataRange().getValues();
+    const idx = headerIndex_(values[0]);
+    let rowNumber = 0;
+    let oldPin = '';
+    for (let r = 1; r < values.length; r++) {
+      if (cleanText_(values[r][idx.station_id]) !== wantedStation) continue;
+      // Two rows sharing a station_id would leave the second one holding the
+      // old PIN — still live, and unreachable from the console. Refuse.
+      if (rowNumber) {
+        throw new Error('Two rows in this event\'s Stations sheet use the id "' + wantedStation +
+          '". Give one of them a different station_id, then try again.');
+      }
+      rowNumber = r + 1;
+      oldPin = cleanText_(values[r][idx.pin]);
+    }
+    if (!rowNumber) throw new Error('Unknown station.');
+    delete taken[oldPin];
+    let assigned;
+    if (!clean) {
+      assigned = genStationPin_(taken);
+    } else {
+      if (taken[clean]) throw new Error('Another station already uses that PIN.');
+      if (hash_(clean) === PropertiesService.getScriptProperties().getProperty('ADMIN_PIN_HASH')) {
+        throw new Error('That is the admin PIN — give the station a different one.');
+      }
+      assigned = clean;
+    }
+    // Stored as text: Sheets would otherwise read 004321 back as 4321.
+    sheet.getRange(rowNumber, idx.pin + 1).setNumberFormat('@').setValue(assigned);
+    forgetPin_(oldPin);
+    forgetPin_(assigned);
+  } finally {
+    lock.releaseLock();
+  }
+  return adminListEvents(pin);
+}
+
+// Changing the admin PIN needs the current one. Losing it is recovered from
+// the master spreadsheet's RCCC Admin menu, where Google checks identity.
+function adminChangeAdminPin(pin, newPin) {
+  requireAdmin_(pin);
+  applyNewAdminPin_(newPin);
+  return { ok: true, adminPinChanged: true };
+}
+
+// Losing the admin PIN must not mean losing the system. The check here is
+// control of an organizer mailbox — a real factor, already available, and one
+// that does NOT require handing anybody the script project, which would also
+// hand them the Twilio token and the Wallet signing key. The code is only ever
+// mailed to addresses configured in the master spreadsheet's Settings sheet,
+// never to an address supplied by the caller, so this public endpoint cannot
+// be aimed at anyone.
+function adminPinResetRecipients_() {
+  const configured = setting_('ADMIN_EMAILS') || setting_('ORGANIZER_EMAIL');
+  return cleanText_(configured).split(/[,;\s]+/).map(cleanText_).filter(Boolean);
+}
+
+function adminRequestPinReset() {
+  const cache = CacheService.getScriptCache();
+  // Generic answer either way: whether a mailbox is configured is not
+  // something a stranger gets to learn, and the cooldown keeps the endpoint
+  // from being used to flood the organizer (Gmail also caps daily sends).
+  const generic = { ok: true, message: 'If an organizer address is on file, a reset code is on its way. It expires in 15 minutes.' };
+  if (cache.get('pinreset:cooldown')) return generic;
+  const to = adminPinResetRecipients_();
+  if (!to.length) return generic;
+  const code = String(Math.floor(Math.random() * 900000) + 100000);
+  const props = PropertiesService.getScriptProperties();
+  props.setProperties({
+    ADMIN_RESET_HASH: hash_(code),
+    ADMIN_RESET_EXPIRES: String(Date.now() + 15 * 60 * 1000),
+    ADMIN_RESET_TRIES: '0'
+  });
+  cache.put('pinreset:cooldown', '1', 600);
+  MailApp.sendEmail({
+    to: to.join(','),
+    subject: 'RCCC Events — admin PIN reset code: ' + code,
+    body: 'Someone asked to reset the admin PIN for RCCC Community Events.\n\n' +
+      'Reset code: ' + code + '\n\nIt expires in 15 minutes and works once.\n\n' +
+      'Enter it in the admin console under "Admin PIN".\n\n' +
+      'If this was not you, ignore this email — the current PIN still works and nothing has changed.'
+  });
+  return generic;
+}
+
+function adminResetPinWithCode(code, newPin) {
+  const props = PropertiesService.getScriptProperties();
+  const expected = props.getProperty('ADMIN_RESET_HASH');
+  const expires = Number(props.getProperty('ADMIN_RESET_EXPIRES') || 0);
+  const tries = Number(props.getProperty('ADMIN_RESET_TRIES') || 0);
+  const clearReset = function() {
+    props.deleteProperty('ADMIN_RESET_HASH');
+    props.deleteProperty('ADMIN_RESET_EXPIRES');
+    props.deleteProperty('ADMIN_RESET_TRIES');
+  };
+  if (!expected || !expires || Date.now() > expires) {
+    clearReset();
+    throw new Error('That code has expired. Request a new one.');
+  }
+  if (tries >= 5) {
+    clearReset();
+    throw new Error('Too many wrong codes. Request a new one.');
+  }
+  if (hash_(cleanText_(code)) !== expected) {
+    props.setProperty('ADMIN_RESET_TRIES', String(tries + 1));
+    throw new Error('That code is not right.');
+  }
+  // Validate the new PIN before burning the code, so a rejected PIN does not
+  // force another round trip through the mailbox.
+  applyNewAdminPin_(newPin);
+  clearReset();
+  return { ok: true, adminPinChanged: true };
+}
+
 function adminAddStation(pin, eventId, name) {
   requireAdmin_(pin);
   const event = eventById_(eventId);
@@ -165,7 +309,7 @@ function adminAddStation(pin, eventId, name) {
   if (!clean) throw new Error('Enter a station name.');
   const sheet = ensureStations_(event);
   const stationId = 'S-' + Utilities.getUuid().replace(/-/g, '').slice(0, 4).toUpperCase();
-  sheet.appendRow([stationId, clean, 'checkin', genStationPin_(allStationPins_()), true, '', '']);
+  sheet.appendRow([stationId, clean, 'checkin', genStationPin_(allStationPins_(true)), true, '', '']);
   return adminListEvents(pin);
 }
 
