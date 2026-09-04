@@ -15,6 +15,21 @@
 // them those. For everyone else, the admin console's emailed reset code is the
 // recovery path — it proves control of an organizer mailbox and grants nothing
 // else.
+// SpreadsheetApp.getUi() only exists while a spreadsheet is actually open, so
+// every function below can ONLY be run from the RCCC Admin menu. Pressing Run
+// on one in the editor throws "Cannot call SpreadsheetApp.getUi() from this
+// context" — say so plainly instead, and point at the function that does work
+// from the editor.
+function ui_() {
+  try {
+    return SpreadsheetApp.getUi();
+  } catch (err) {
+    console.log('This one is a menu command — open the master spreadsheet and use its RCCC Admin menu.\n' +
+      'From the editor, run installAdminMenu() to put the menu there, or resetAdminPinFromEditor() to set a new admin PIN right now.');
+    return null;
+  }
+}
+
 function buildAdminMenu() {
   SpreadsheetApp.getUi().createMenu('RCCC Admin')
     .addItem('Set the admin PIN…', 'menuSetAdminPin')
@@ -52,7 +67,8 @@ function applyNewAdminPin_(newPin) {
 }
 
 function menuSetAdminPin() {
-  const ui = SpreadsheetApp.getUi();
+  const ui = ui_();
+  if (!ui) return;
   const res = ui.prompt('Set the admin PIN', 'Type a new admin PIN (4 to 10 digits).', ui.ButtonSet.OK_CANCEL);
   if (res.getSelectedButton() !== ui.Button.OK) return;
   try {
@@ -66,7 +82,8 @@ function menuSetAdminPin() {
 }
 
 function menuGenerateAdminPin() {
-  const ui = SpreadsheetApp.getUi();
+  const ui = ui_();
+  if (!ui) return;
   const taken = allStationPins_(true);
   let pin;
   do { pin = String(Math.floor(Math.random() * 900000) + 100000); } while (taken[pin]);
@@ -91,18 +108,35 @@ function menuShowStationPins() {
     });
     lines.push('');
   });
-  SpreadsheetApp.getUi().alert('Station PINs',
+  const ui = ui_();
+  if (!ui) { console.log(lines.join('\n') || 'No stations yet — create an event first.'); return; }
+  ui.alert('Station PINs',
     lines.length ? lines.join('\n') + '\nOnly an ACTIVE event’s PINs open the scanner.'
       : 'No stations yet — create an event first.',
-    SpreadsheetApp.getUi().ButtonSet.OK);
+    ui.ButtonSet.OK);
 }
 
 function menuOpenConsole() {
-  const ui = SpreadsheetApp.getUi();
+  const ui = ui_();
+  if (!ui) return;
   const url = setting_('WEB_APP_URL');
   if (!url) { ui.alert('The web app URL has not been recorded yet — open the console once from the deployment page.'); return; }
   ui.showModalDialog(
     HtmlService.createHtmlOutput('<p style="font-family:Arial,sans-serif;font-size:15px">' +
       '<a href="' + url + '?view=admin" target="_blank">Open the admin console</a></p>').setWidth(300).setHeight(80),
     'Admin console');
+}
+
+// The editor has no spreadsheet UI, so this is the one that works from the Run
+// button: it invents a PIN, applies it, and prints it to the execution log.
+// That log is visible to anyone with project access — the same people who
+// could reset the PIN anyway.
+function resetAdminPinFromEditor() {
+  const taken = allStationPins_(true);
+  let pin;
+  do { pin = String(Math.floor(Math.random() * 900000) + 100000); } while (taken[pin]);
+  applyNewAdminPin_(pin);
+  console.log('New admin PIN: ' + pin);
+  console.log('Admin console: ' + setting_('WEB_APP_URL') + '?view=admin');
+  return pin;
 }
