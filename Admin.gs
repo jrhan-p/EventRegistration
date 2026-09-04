@@ -43,6 +43,7 @@ function adminListEvents(pin) {
   const props = PropertiesService.getScriptProperties();
   return {
     masterUrl: db_().getUrl(), scannerUrl: SCANNER_BASE, events: events,
+    build: APP.version,
     smsConfigured: Boolean(props.getProperty('TWILIO_ACCOUNT_SID') && props.getProperty('TWILIO_AUTH_TOKEN') && props.getProperty('TWILIO_FROM_NUMBER')),
     smsFrom: props.getProperty('TWILIO_FROM_NUMBER') || ''
   };
@@ -93,23 +94,65 @@ function adminCreateEvent(pin, name, date, location) {
 function adminEventAction(pin, eventId, action) {
   requireAdmin_(pin);
   const wanted = cleanText_(action).toLowerCase();
-  const event = eventById_(eventId);
-  if (!event) throw new Error('Unknown event.');
-  if (wanted === 'finalize') {
-    finalizeMealOrderFor_(event);
-  } else if (wanted === 'close' || wanted === 'reopen') {
-    FormApp.openById(event.formId).setAcceptingResponses(wanted === 'reopen');
+  const cleanId = cleanText_(eventId);
+  // A blank id would otherwise match any row whose event_id cell is empty —
+  // exactly what a not-yet-provisioned row looks like.
+  if (!cleanId) throw new Error('Unknown event.');
+  // Locate AND mutate under the lock adminCreateEvent uses. deleteRow shifts
+  // every row beneath it, so an unlocked delete could land on a row that moved
+  // after it was located, or shift the row a 20-second provisionEvent_ is
+  // still writing into — either way the registry ends up pointing at the
+  // wrong spreadsheet and form.
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    // Direct row scan (not eventById_) so half-provisioned ERROR rows — which
+    // have no spreadsheet yet — can still be deleted.
     const sheet = db_().getSheetByName(SHEETS.EVENTS);
     const values = sheet.getDataRange().getValues();
     const idx = headerIndex_(values[0]);
+    let rowNumber = 0;
+    let row = null;
     for (let r = 1; r < values.length; r++) {
-      if (cleanText_(values[r][idx.event_id]) === event.eventId) {
-        sheet.getRange(r + 1, idx.status + 1).setValue(wanted === 'reopen' ? 'ACTIVE' : 'CLOSED');
-        break;
-      }
+      if (cleanText_(values[r][idx.event_id]) !== cleanId) continue;
+      // Never act on an ambiguous id: refuse rather than guess which row.
+      if (rowNumber) throw new Error('Two rows in the Events sheet carry the id "' + cleanId + '". Give one of them a different id, then try again.');
+      rowNumber = r + 1;
+      row = values[r];
     }
-  } else {
-    throw new Error('Unknown action "' + wanted + '".');
+    if (!rowNumber) throw new Error('Unknown event.');
+    const formId = cleanText_(row[idx.form_id]);
+    const spreadsheetId = cleanText_(row[idx.spreadsheet_id]);
+    const status = cleanText_(row[idx.status]).toUpperCase();
+    if (wanted === 'finalize') {
+      if (!spreadsheetId) throw new Error('This event has no spreadsheet yet.');
+      finalizeMealOrderFor_({ eventId: cleanId, spreadsheetId: spreadsheetId });
+    } else if (wanted === 'close' || wanted === 'reopen') {
+      if (!formId) throw new Error('This event has no form yet.');
+      // Reopen is gated on STATUS, not on having ids. A row that failed part
+      // way through provisioning has both ids recorded and still lacks its
+      // form-submit trigger, so "has a spreadsheet id" is no proof it was ever
+      // finished — reopening one would put a live form in front of guests that
+      // nothing records: no ticket, no QR code, no email.
+      if (wanted === 'reopen' && status !== 'CLOSED') {
+        throw new Error('Only a closed event can be reopened — this one is ' + (status || 'not provisioned') +
+          '. Delete it and create it again.');
+      }
+      FormApp.openById(formId).setAcceptingResponses(wanted === 'reopen');
+      sheet.getRange(rowNumber, idx.status + 1).setValue(wanted === 'reopen' ? 'ACTIVE' : 'CLOSED');
+    } else if (wanted === 'delete') {
+      // Stop intake, detach the trigger, drop the registry row. Drive files
+      // stay (no Drive scope) — the organizer can trash them from Drive.
+      if (formId) {
+        try { FormApp.openById(formId).setAcceptingResponses(false); } catch (err) {}
+      }
+      if (spreadsheetId) detachFormTrigger_(spreadsheetId);
+      sheet.deleteRow(rowNumber);
+    } else {
+      throw new Error('Unknown action "' + wanted + '".');
+    }
+  } finally {
+    lock.releaseLock();
   }
   return adminListEvents(pin);
 }

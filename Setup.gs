@@ -149,6 +149,11 @@ function setupApplication() {
   return { masterSpreadsheetUrl: ss.getUrl() };
 }
 
+// Deliberately unlocked: this loop can provision several events in one run,
+// and holding the script lock across a batch would outlast the 30-second
+// waitLock in handleFormSubmit — a guest registering mid-run would be dropped
+// with no row, no ticket, and no way to retry. Row safety comes instead from
+// re-finding each row by its event_id before writing to it.
 function applyEventChanges() {
   const sheet = db_().getSheetByName(SHEETS.EVENTS);
   if (!sheet) throw new Error('Run setupApplication() first.');
@@ -161,7 +166,12 @@ function applyEventChanges() {
     const status = cleanText_(row[idx.status]).toUpperCase();
     const action = cleanText_(row[idx.action]).toLowerCase();
     if (!status || status === 'NEW') {
-      messages.push(provisionEvent_(sheet, idx, r + 1, row));
+      // One broken row must not stop the others from provisioning.
+      try {
+        messages.push(provisionEvent_(sheet, idx, r + 1, row));
+      } catch (err) {
+        messages.push(cleanText_(row[idx.event_name]) + ': FAILED — ' + ((err && err.message) || err));
+      }
       continue;
     }
     if (!action) continue;
@@ -171,16 +181,23 @@ function applyEventChanges() {
       messages.push(event.eventId + ': meal order finalized');
     } else if (action === 'close') {
       FormApp.openById(event.formId).setAcceptingResponses(false);
-      sheet.getRange(r + 1, idx.status + 1).setValue('CLOSED');
+      setEventStatus_(sheet, idx, event.eventId, 'CLOSED');
       messages.push(event.eventId + ': registration closed');
     } else if (action === 'reopen') {
-      FormApp.openById(event.formId).setAcceptingResponses(true);
-      sheet.getRange(r + 1, idx.status + 1).setValue('ACTIVE');
-      messages.push(event.eventId + ': registration reopened');
+      // Only a cleanly closed event may reopen: an ERROR row can carry a form
+      // id and still have no submit trigger behind it.
+      if (status !== 'CLOSED') {
+        messages.push(event.eventId + ': cannot reopen — status is ' + status + ' (only a CLOSED event can be reopened)');
+      } else {
+        FormApp.openById(event.formId).setAcceptingResponses(true);
+        setEventStatus_(sheet, idx, event.eventId, 'ACTIVE');
+        messages.push(event.eventId + ': registration reopened');
+      }
     } else {
       messages.push(event.eventId + ': unknown action "' + action + '" (use finalize, close, or reopen)');
     }
-    sheet.getRange(r + 1, idx.action + 1).setValue('');
+    const clearAt = eventRowNumber_(sheet, idx, event.eventId);
+    if (clearAt) sheet.getRange(clearAt, idx.action + 1).setValue('');
   }
   if (!messages.length) {
     messages.push('Nothing to do. Add a row with an event_name, or type finalize/close/reopen in the action column.');
@@ -189,43 +206,173 @@ function applyEventChanges() {
   return messages;
 }
 
+// Every event gets its own dated id (EV-yyyymmdd-XXXX), re-rolled until it is
+// unique against every id already in the sheet.
+function newEventId_(eventsSheet, idx) {
+  const existing = {};
+  const values = eventsSheet.getDataRange().getValues();
+  for (let r = 1; r < values.length; r++) {
+    const id = cleanText_(values[r][idx.event_id]).toUpperCase();
+    if (id) existing[id] = true;
+  }
+  let id;
+  do {
+    id = 'EV-' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd') + '-' +
+      Utilities.getUuid().replace(/-/g, '').slice(0, 4).toUpperCase();
+  } while (existing[id]);
+  return id;
+}
+
+// A row's number is only valid until something above it is deleted, and both
+// provisioning and the action branches keep working for seconds after they
+// read it. Every write that follows a slow Forms/Sheets call therefore re-finds
+// the row by its event_id instead of trusting the number it started with.
+function eventRowNumber_(eventsSheet, idx, eventId) {
+  const wanted = cleanText_(eventId);
+  const values = eventsSheet.getDataRange().getValues();
+  for (let r = 1; r < values.length; r++) {
+    if (cleanText_(values[r][idx.event_id]) === wanted) return r + 1;
+  }
+  return 0;
+}
+
+function setEventStatus_(eventsSheet, idx, eventId, status) {
+  const at = eventRowNumber_(eventsSheet, idx, eventId);
+  if (at) eventsSheet.getRange(at, idx.status + 1).setValue(status);
+  return at;
+}
+
+function eventIdTakenElsewhere_(eventsSheet, idx, eventId, ownRowNumber) {
+  const wanted = cleanText_(eventId).toUpperCase();
+  const values = eventsSheet.getDataRange().getValues();
+  for (let r = 1; r < values.length; r++) {
+    if (r + 1 === ownRowNumber) continue;
+    if (cleanText_(values[r][idx.event_id]).toUpperCase() === wanted) return true;
+  }
+  return false;
+}
+
+function detachFormTrigger_(spreadsheetId) {
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === 'handleFormSubmit' && t.getTriggerSourceId() === spreadsheetId) {
+      ScriptApp.deleteTrigger(t);
+    }
+  });
+}
+
+function ensureFormTrigger_(ss) {
+  const ssId = ss.getId();
+  const exists = ScriptApp.getProjectTriggers().some(function(t) {
+    return t.getHandlerFunction() === 'handleFormSubmit' && t.getTriggerSourceId() === ssId;
+  });
+  if (!exists) ScriptApp.newTrigger('handleFormSubmit').forSpreadsheet(ss).onFormSubmit().create();
+}
+
+// Triggers whose spreadsheet is gone count against the 20-trigger quota
+// forever; sweep them before creating a new one. The Events registry decides
+// what is orphaned — NOT a trial openById, which also throws on transient
+// Sheets outages and rate limits. Treating one of those as proof of deletion
+// would silently delete a live event's only form trigger, and nothing
+// recreates it: registrations would land in the sheet with no ticket, no QR
+// token, and no email, with nothing to show anyone what broke.
+function cleanupOrphanTriggers_() {
+  const sheet = db_().getSheetByName(SHEETS.EVENTS);
+  if (!sheet) return;
+  const values = sheet.getDataRange().getValues();
+  if (!values.length) return;
+  const idx = headerIndex_(values[0]);
+  if (idx.spreadsheet_id === undefined) return;
+  const registered = {};
+  for (let r = 1; r < values.length; r++) {
+    const id = cleanText_(values[r][idx.spreadsheet_id]);
+    if (id) registered[id] = true;
+  }
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() !== 'handleFormSubmit') return;
+    if (registered[t.getTriggerSourceId()]) return;
+    ScriptApp.deleteTrigger(t);
+  });
+}
+
 function provisionEvent_(eventsSheet, idx, rowNumber, row) {
   const name = cleanText_(row[idx.event_name]);
   let eventId = cleanText_(row[idx.event_id]);
+  // Ids must be unique: stations, receipts, and wallet passes all resolve by
+  // id, and every admin action addresses an event by it. A hand-typed id that
+  // is already taken is therefore replaced with a fresh one rather than left
+  // in place — two rows sharing an id make every by-id action ambiguous, and
+  // a delete aimed at one of them would hit the other.
+  let renamedFrom = '';
+  if (eventId && eventIdTakenElsewhere_(eventsSheet, idx, eventId, rowNumber)) {
+    renamedFrom = eventId;
+    eventId = '';
+  }
   if (!eventId) {
-    eventId = 'EV-' + Utilities.getUuid().replace(/-/g, '').slice(0, 6).toUpperCase();
+    eventId = newEventId_(eventsSheet, idx);
     eventsSheet.getRange(rowNumber, idx.event_id + 1).setValue(eventId);
   }
-  const ss = SpreadsheetApp.create('Event Registration – ' + name);
-  const initialSheet = ss.getSheets()[0];
-  const meals = templateMeals_();
-  ensureSheet_(ss, SHEETS.MEALS, ['meal_name', 'active'], meals.map(function(m) { return [m, true]; }));
-  ensureSheet_(ss, SHEETS.REGISTRATIONS, REG_HEADERS);
-  ensureSheet_(ss, SHEETS.SCAN_LOG, LOG_HEADERS);
-  ensureSheet_(ss, SHEETS.FOOD_SUMMARY, ['meal_name', 'requested', 'marked_ordered', 'redeemed', 'remaining']);
-  const takenPins = allStationPins_();
-  ensureSheet_(ss, SHEETS.STATIONS, STATION_HEADERS, [
-    ['MAIN', 'Main check-in', 'checkin', genStationPin_(takenPins), true, '', ''],
-    ['MEAL', 'Meal pickup', 'meal', genStationPin_(takenPins), true, '', '']
-  ]);
-  ensureSheet_(ss, SHEETS.CHECKINS, CHECKIN_HEADERS);
-  if (ss.getSheets().length > 1) ss.deleteSheet(initialSheet);
-  const form = FormApp.create(name + ' – Registration');
-  requireVerifiedGoogleEmail_(form);
-  buildFormItems_(form, meals);
-  form.setDestination(FormApp.DestinationType.SPREADSHEET, ss.getId());
-  form.setAcceptingResponses(true);
-  ScriptApp.newTrigger('handleFormSubmit').forSpreadsheet(ss).onFormSubmit().create();
-  eventsSheet.getRange(rowNumber, idx.status + 1).setValue('ACTIVE');
-  eventsSheet.getRange(rowNumber, idx.registration_url + 1).setValue(form.getPublishedUrl());
-  eventsSheet.getRange(rowNumber, idx.checkin_scanner_url + 1).setValue(SCANNER_BASE);
-  eventsSheet.getRange(rowNumber, idx.meal_scanner_url + 1).setValue(SCANNER_BASE);
-  eventsSheet.getRange(rowNumber, idx.spreadsheet_url + 1).setValue(ss.getUrl());
-  eventsSheet.getRange(rowNumber, idx.form_edit_url + 1).setValue(form.getEditUrl());
-  eventsSheet.getRange(rowNumber, idx.spreadsheet_id + 1).setValue(ss.getId());
-  eventsSheet.getRange(rowNumber, idx.form_id + 1).setValue(form.getId());
-  eventsSheet.getRange(rowNumber, idx.created_at + 1).setValue(new Date());
-  return eventId + ': provisioned (' + name + ')';
+  let ss = null;
+  let form = null;
+  try {
+    cleanupOrphanTriggers_();
+    ss = SpreadsheetApp.create('Event Registration – ' + name);
+    const initialSheet = ss.getSheets()[0];
+    const meals = templateMeals_();
+    ensureSheet_(ss, SHEETS.MEALS, ['meal_name', 'active'], meals.map(function(m) { return [m, true]; }));
+    ensureSheet_(ss, SHEETS.REGISTRATIONS, REG_HEADERS);
+    ensureSheet_(ss, SHEETS.SCAN_LOG, LOG_HEADERS);
+    ensureSheet_(ss, SHEETS.FOOD_SUMMARY, ['meal_name', 'requested', 'marked_ordered', 'redeemed', 'remaining']);
+    const takenPins = allStationPins_();
+    ensureSheet_(ss, SHEETS.STATIONS, STATION_HEADERS, [
+      ['MAIN', 'Main check-in', 'checkin', genStationPin_(takenPins), true, '', ''],
+      ['MEAL', 'Meal pickup', 'meal', genStationPin_(takenPins), true, '', '']
+    ]);
+    ensureSheet_(ss, SHEETS.CHECKINS, CHECKIN_HEADERS);
+    if (ss.getSheets().length > 1) ss.deleteSheet(initialSheet);
+    form = FormApp.create(name + ' – Registration');
+    requireVerifiedGoogleEmail_(form);
+    buildFormItems_(form, meals);
+    form.setDestination(FormApp.DestinationType.SPREADSHEET, ss.getId());
+    form.setAcceptingResponses(true);
+    ensureFormTrigger_(ss);
+    // Creating the spreadsheet and form took seconds; re-find the row before
+    // writing, in case something above it was deleted meanwhile.
+    const at = eventRowNumber_(eventsSheet, idx, eventId);
+    if (!at) {
+      detachFormTrigger_(ss.getId());
+      form.setAcceptingResponses(false);
+      return eventId + ': ABANDONED — its Events row was removed while the event was being built. ' +
+        'The spreadsheet and form it had already created are still in Drive.';
+    }
+    eventsSheet.getRange(at, idx.registration_url + 1).setValue(form.getPublishedUrl());
+    eventsSheet.getRange(at, idx.checkin_scanner_url + 1).setValue(SCANNER_BASE);
+    eventsSheet.getRange(at, idx.meal_scanner_url + 1).setValue(SCANNER_BASE);
+    eventsSheet.getRange(at, idx.spreadsheet_url + 1).setValue(ss.getUrl());
+    eventsSheet.getRange(at, idx.form_edit_url + 1).setValue(form.getEditUrl());
+    eventsSheet.getRange(at, idx.spreadsheet_id + 1).setValue(ss.getId());
+    eventsSheet.getRange(at, idx.form_id + 1).setValue(form.getId());
+    eventsSheet.getRange(at, idx.created_at + 1).setValue(new Date());
+    // ACTIVE is written last: a half-provisioned event can never look live.
+    eventsSheet.getRange(at, idx.status + 1).setValue('ACTIVE');
+  } catch (err) {
+    const at = eventRowNumber_(eventsSheet, idx, eventId);
+    if (at) {
+      eventsSheet.getRange(at, idx.status + 1).setValue('ERROR');
+      // Record whatever was created so nothing is silently orphaned.
+      if (ss) {
+        eventsSheet.getRange(at, idx.spreadsheet_url + 1).setValue(ss.getUrl());
+        eventsSheet.getRange(at, idx.spreadsheet_id + 1).setValue(ss.getId());
+      }
+      if (form) {
+        eventsSheet.getRange(at, idx.form_edit_url + 1).setValue(form.getEditUrl());
+        eventsSheet.getRange(at, idx.form_id + 1).setValue(form.getId());
+      }
+    }
+    throw new Error('Creating "' + name + '" failed: ' + ((err && err.message) || err) +
+      ' — the Events row is marked ERROR. An ERROR event cannot be reopened; delete it and create it again.');
+  }
+  return eventId + ': provisioned (' + name + ')' +
+    (renamedFrom ? ' — the id "' + renamedFrom + '" was already in use, so this event was given a new one' : '');
 }
 
 // Removes the single-event tabs, test users, and legacy form left over from the

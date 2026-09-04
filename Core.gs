@@ -1,5 +1,5 @@
 const APP = Object.freeze({
-  version: '0.1.0',
+  version: '0.2.0',
   qrPrefix: 'CER1:',
   noMeal: 'No meal',
   statuses: Object.freeze({ ACTIVE: 'ACTIVE', CANCELED: 'CANCELED' }),

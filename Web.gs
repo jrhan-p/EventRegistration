@@ -5,6 +5,7 @@ function doGet(e) {
   if (view === 'admin') {
     const admin = HtmlService.createTemplateFromFile('AdminPage');
     admin.webAppUrl = setting_('WEB_APP_URL');
+    admin.consoleBuild = APP.version;
     return page_(admin.evaluate().setTitle('Event admin'));
   }
   // The scanner itself lives on GitHub Pages (top-level, so cameras work);

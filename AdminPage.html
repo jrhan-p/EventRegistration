@@ -62,6 +62,7 @@ button:disabled{background:#b6b0a2;cursor:wait}
 </div>
 <script>
 const API='<?= webAppUrl ?>';
+const CONSOLE_BUILD='<?= consoleBuild ?>';
 let busy=false;
 const LABELS={listEvents:'Loading events…',createEvent:'Creating the event — this takes about 20 seconds, please wait…',eventAction:'Applying…',cleanupLegacy:'Cleaning up…'};
 function pin(){return document.getElementById('pin').value}
@@ -78,11 +79,14 @@ function refresh(){call('listEvents')}
 function createEvent(){const n=document.getElementById('name').value;if(!n.trim()){note('Enter an event name.',false);return}
  call('createEvent',{name:n,date:document.getElementById('date').value,location:document.getElementById('loc').value})}
 function act(id,a){if(a!=='reopen'&&!confirm(a+' this event?'))return;call('eventAction',{event:id,action:a})}
+function delEvent(id,name){if(!confirm('Delete "'+name+'" ('+id+')? Its registrations spreadsheet and form stay in Drive, but the event disappears from this console and its PINs stop working.'))return;
+ call('eventAction',{event:id,action:'delete'})}
 function cleanup(){if(confirm('Remove the legacy test data? This cannot be undone.'))call('cleanupLegacy')}
 function esc(s){return String(s||'').replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
 function updateSms(r){const el=document.getElementById('smsStatus');
  el.textContent=r.smsConfigured?('Configured — texts are sent from '+r.smsFrom+'.'):'Not configured — registration texts are skipped until credentials are saved.'}
 function render(r){document.getElementById('create').style.display='block';document.getElementById('tools').style.display='block';document.getElementById('sms').style.display='block';
+ if(r.build&&r.build!==CONSOLE_BUILD){note('This page is outdated (v'+CONSOLE_BUILD+' vs server v'+r.build+') — press Cmd+Shift+R to hard-refresh, then unlock again.',false);return}
  if(r.smsConfigured!==undefined)updateSms(r);
  if(!r.events){if(r.sent)note('Test SMS sent to '+r.sent+'.',true);document.getElementById('twToken').value='';return}
  const list=document.getElementById('list');
@@ -99,7 +103,10 @@ function render(r){document.getElementById('create').style.display='block';docum
     '<td style="padding:4px 0;font-family:ui-monospace,Menlo,monospace;font-weight:700;letter-spacing:2px">'+esc(s.pin||'—')+'</td></tr>'}).join('');
   const buttons=(ev.status==='ACTIVE'
    ? '<button onclick="act(\''+esc(ev.eventId)+'\',\'finalize\')">Finalize meal order</button><button class="gray" onclick="act(\''+esc(ev.eventId)+'\',\'close\')">Close registration</button>'
-   : '<button class="gray" onclick="act(\''+esc(ev.eventId)+'\',\'reopen\')">Reopen registration</button>');
+   : ev.status==='CLOSED'
+   ? '<button class="gray" onclick="act(\''+esc(ev.eventId)+'\',\'reopen\')">Reopen registration</button>'
+   : '<span class="muted" style="margin-right:10px">This event never finished being created — delete it and make a new one.</span>')
+   +'<button class="red" onclick="delEvent(\''+esc(ev.eventId)+'\',\''+esc(String(ev.name||'').replace(/['\\]/g,''))+'\')">Delete</button>';
   return '<div class="card"><h2>'+esc(ev.name)+' <span class="status '+esc(ev.status)+'">'+esc(ev.status)+'</span></h2>'+
    '<div class="evmeta">'+esc(ev.eventId)+(ev.date?' · '+esc(ev.date):'')+(ev.location?' · '+esc(ev.location):'')+'</div>'+
    '<div class="links">'+links+'</div>'+
